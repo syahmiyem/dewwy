@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "author": "Syahmiyem",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "wokwi-arduino-uno", "id": "uno", "top": 0, "left": 0 },
+    { "type": "wokwi-hc-sr04", "id": "ultrasonic", "top": -100, "left": 200 },
+    { "type": "wokwi-tb6612-breakout", "id": "motordriver", "top": 250, "left": 20 },
+    { "type": "wokwi-geared-motor", "id": "motor1", "top": 250, "left": 250 },
+    { "type": "wokwi-geared-motor", "id": "motor2", "top": 350, "left": 250 },
+    { "type": "wokwi-resistor", "id": "r1", "top": 180, "left": 220, "attrs": { "value": "1000" } },
+    { "type": "wokwi-resistor", "id": "r2", "top": 180, "left": 260, "attrs": { "value": "1000" } }
+  ],
+  "connections": [
+    [ "uno:5V", "ultrasonic:VCC", "red", [ "v-10", "h200" ] ],
+    [ "uno:GND.2", "ultrasonic:GND", "black", [ "v0" ] ],
+    [ "uno:9", "ultrasonic:TRIG", "green", [ "v-20", "h100" ] ],
+    [ "uno:10", "ultrasonic:ECHO", "blue", [ "v-30", "h120" ] ],
+
+    [ "uno:5V", "motordriver:VM", "red", [ "v200", "h-30" ] ],
+    [ "uno:GND.3", "motordriver:GND.1", "black", [ "v180", "h-20" ] ],
+    [ "uno:3", "motordriver:PWMA", "blue", [ "v50", "h-30" ] ],
+    [ "uno:4", "motordriver:AIN1", "green", [ "v60", "h-20" ] ],
+    [ "uno:5", "motordriver:AIN2", "yellow", [ "v70", "h-10" ] ],
+    [ "uno:6", "motordriver:PWMB", "blue", [ "v80", "h0" ] ],
+    [ "uno:7", "motordriver:BIN1", "green", [ "v90", "h10" ] ],
+    [ "uno:8", "motordriver:BIN2", "yellow", [ "v100", "h20" ] ],
+    [ "uno:2", "motordriver:STBY", "white", [ "v110", "h30" ] ],
+
+    [ "motordriver:A01", "motor1:+", "red", [ "v0", "h80" ] ],
+    [ "motordriver:A02", "motor1:-", "black", [ "v10", "h70" ] ],
+    [ "motordriver:B01", "motor2:+", "red", [ "v100", "h60" ] ],
+    [ "motordriver:B02", "motor2:-", "black", [ "v110", "h50" ] ],
+
+    [ "r1:1", "uno:5V", "red", [ "v-20", "h-60", "v-100" ] ],
+    [ "r1:2", "ultrasonic:ECHO", "blue", [ "v0" ] ],
+    [ "r2:1", "ultrasonic:ECHO", "blue", [ "h-40", "v30" ] ],
+    [ "r2:2", "uno:GND.1", "black", [ "h10", "v-150" ] ]
+  ],
+  "dependencies": {}
+}

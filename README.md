@@ -22,7 +22,7 @@ Dewwy is designed to:
 ### Software Architecture
 - **Arduino Side**: Sensor polling and motor control
 - **Raspberry Pi Side**: Robot intelligence, personality, display control
-- **Simulation**: Tkinter-based visualization and virtual hardware
+- **Simulation**: Arcade-based visualization and virtual hardware
 
 ## Getting Started
 
@@ -56,7 +56,41 @@ To connect to real hardware:
 python raspberry_pi/main.py --no-simulation
 ```
 
-### Tests
+### Testing Serial Communication
+
+To test serial communication between Raspberry Pi and Arduino:
+```
+python tools/serial_tester.py
+```
+
+For real hardware:
+```
+python tools/serial_tester.py --real --port /dev/ttyUSB0
+```
+
+## Serial Communication Protocol
+
+Communication between Raspberry Pi and Arduino uses simple text-based commands:
+
+### Commands (Raspberry Pi → Arduino)
+- `FWD` - Move forward
+- `BCK` - Move backward
+- `LFT` - Turn left
+- `RGT` - Turn right
+- `STP` - Stop movement
+- `AUTO` - Switch to autonomous mode
+- `CMD` - Switch to command mode
+- `PING` - Check connection
+- `STATUS` - Request status information
+
+### Responses (Arduino → Raspberry Pi)
+- `DIST:123` - Distance reading (123 cm)
+- `ACK:XXX` - Acknowledge command XXX
+- `MODE:XXX` - Current mode (AUTO or CMD)
+- `PONG` - Response to PING
+- `ERR:XXX` - Error message
+
+## Tests
 
 Run the tests to verify functionality:
 ```
@@ -68,19 +102,23 @@ python -m pytest tests/
 ```
 dewwy/
 ├── arduino/                  # Arduino firmware files
-│   ├── main_arduino/         
-│   ├── motor_control/
-│   └── sensor_module/
+│   ├── main_arduino/         # Main Arduino program
+│   ├── motor_control/        # Motor control functions
+│   ├── sensor_module/        # Sensor interface code
+│   ├── diagram.json          # Wokwi circuit diagram
+│   └── wokwi.toml            # Wokwi configuration
 ├── raspberry_pi/             # Raspberry Pi software
 │   ├── behavior/             # Robot personality and state machine
 │   ├── communication/        # Serial communication with Arduino
 │   ├── display/              # OLED display interface
-│   └── main.py
+│   └── main.py               # Main entry point
 ├── simulation/               # Simulation components
-│   ├── gui_display.py
-│   ├── robot_simulator.py
-│   ├── virtual_motors.py
-│   └── virtual_sensors.py
+│   ├── arcade_simulator.py   # Graphics simulator (Arcade)
+│   ├── serial_visualizer.py  # Serial communication visualizer
+│   ├── virtual_motors.py     # Motor simulation
+│   └── virtual_sensors.py    # Sensor simulation
+├── tools/                    # Utility scripts
+│   └── serial_tester.py      # Serial communication testing tool
 └── tests/                    # Test files
 ```
 

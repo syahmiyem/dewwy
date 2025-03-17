@@ -16,9 +16,8 @@ from raspberry_pi.behavior.robot_personality import RobotPersonality, Emotion
 from simulation.virtual_sensors import UltrasonicSensor
 from simulation.virtual_motors import MotorController
 
-# Import simulator - now using Arcade instead of PyGame
-from simulation.arcade_simulator import ArcadeSimulator
-import arcade
+# Import the Arcade simulator
+from simulation.arcade_simulator import ArcadeSimulator, run_simulator
 
 class PetRobot:
     def __init__(self, simulation_mode=True, gui_mode=True):
@@ -31,16 +30,16 @@ class PetRobot:
         self.display = OLEDDisplay(simulation=simulation_mode)
         self.display.set_status("Starting up...")
         
-        # Initialize GUI if requested
+        # Initialize either GUI simulator or headless components
         self.simulator = None
         if gui_mode and simulation_mode:
-            print("Creating Arcade simulator interface...")
-            # Create simulator with Arcade
-            self.simulator = ArcadeSimulator()
-            self.sensor = self.simulator.sensor
-            self.motors = self.simulator.motors
+            print("Creating simulator interface...")
+            # We'll initialize the simulator later when we start
+            self.sensor = None  # Will be set when simulator starts
+            self.motors = None  # Will be set when simulator starts
         else:
             # No GUI - use simple simulated components
+            print("Using headless simulation...")
             self.sensor = UltrasonicSensor()
             self.motors = MotorController()
         
@@ -51,9 +50,11 @@ class PetRobot:
             self.sensor = self._create_sensor_interface(self.serial)
             self.motors = self._create_motor_interface(self.serial)
         
-        # Initialize personality and state machine
-        self.personality = RobotPersonality(display=self.display)
-        self.state_machine = RobotStateMachine(self.sensor, self.motors, self.personality)
+        # Initialize personality and state machine only for non-GUI mode
+        # In GUI mode, we'll initialize these after the simulator starts
+        if not (gui_mode and simulation_mode):
+            self.personality = RobotPersonality(display=self.display)
+            self.state_machine = RobotStateMachine(self.sensor, self.motors, self.personality)
         
         # Setup signal handlers for clean shutdown
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -104,23 +105,34 @@ class PetRobot:
         """Start the robot's main loop"""
         print("Starting pet robot...")
         self.display.set_status("Running")
-        self.display.set_emotion(Emotion.HAPPY)
         
-        # Start in a separate thread if using GUI
         if self.gui_mode and self.simulation_mode:
-            print("Starting in GUI mode with Arcade simulation...")
+            print("Starting simulator in GUI mode...")
+            # Create and run the simulator
+            self.simulator = ArcadeSimulator()
+            
+            # Set up references to simulator components
+            self.sensor = self.simulator.sensor
+            self.motors = self.simulator.motors
+            
+            # Now initialize personality and state machine
+            self.personality = RobotPersonality(display=self.display)
+            self.state_machine = RobotStateMachine(self.sensor, self.motors, self.personality)
+            self.display.set_emotion(Emotion.HAPPY)
+            
+            # Start state machine in a separate thread
             self.main_thread = threading.Thread(target=self._main_loop)
             self.main_thread.daemon = True
             self.main_thread.start()
             
-            # Run the Arcade simulator main loop (this blocks until window is closed)
-            print("Starting Arcade simulator...")
-            arcade.run()
+            # Start the simulator (this blocks until window is closed)
+            run_simulator()
             
             # When simulator closes, shut down the system
             self.shutdown()
         else:
-            # Run directly in this thread
+            # We're in headless mode, run directly
+            self.display.set_emotion(Emotion.HAPPY)
             self._main_loop()
     
     def _main_loop(self):
@@ -132,20 +144,22 @@ class PetRobot:
                 start_time = time.time()
                 
                 # Update the state machine
-                self.state_machine.update()
+                if hasattr(self, 'state_machine'):
+                    self.state_machine.update()
                 
-                # Print current state and emotion (for debugging/simulation)
-                state = self.state_machine.current_state
-                emotion = self.personality.get_emotion()
-                distance = self.sensor.measure_distance()
+                # Get current state
+                if hasattr(self, 'state_machine') and hasattr(self, 'personality'):
+                    state = self.state_machine.current_state
+                    emotion = self.personality.get_emotion()
+                    distance = self.sensor.measure_distance()
+                    
+                    print(f"State: {state}, Emotion: {emotion}, Distance: {distance:.1f}cm")
+                    
+                    # Update the simulator if it exists
+                    if self.simulator:
+                        self.simulator.set_state_and_emotion(state, emotion)
                 
-                print(f"State: {state}, Emotion: {emotion}, Distance: {distance:.1f}cm")
-                
-                # Update the simulator UI if using GUI
-                if self.gui_mode and self.simulation_mode and self.simulator:
-                    self.simulator.set_state_and_emotion(state, emotion)
-                
-                # Calculate sleep time to maintain consistent update rate
+                # Sleep to maintain update rate
                 elapsed = time.time() - start_time
                 sleep_time = max(0, update_interval - elapsed)
                 time.sleep(sleep_time)
@@ -155,7 +169,6 @@ class PetRobot:
             import traceback
             traceback.print_exc()
         finally:
-            # Clean shutdown if not in GUI mode
             if not self.gui_mode:
                 self.shutdown()
     
@@ -169,24 +182,20 @@ class PetRobot:
         print("Shutting down pet robot...")
         self.running = False
         
-        # Stop components - add safety checks
+        # Stop components with safety checks
         if hasattr(self, 'display') and self.display:
             try:
                 self.display.shutdown()
             except Exception as e:
                 print(f"Error shutting down display: {e}")
-                
+        
         if hasattr(self, 'serial') and self.serial:
-            self.serial.disconnect()
-        
-        # Close simulator if it exists
-        if hasattr(self, 'simulator') and self.simulator:
             try:
-                arcade.close_window()
+                self.serial.disconnect()
             except Exception as e:
-                print(f"Error closing simulator: {e}")
+                print(f"Error disconnecting serial: {e}")
         
-        # Exit after a short delay to allow cleanup
+        # Exit normally if not in GUI mode
         if not self.gui_mode:
             sys.exit(0)
 

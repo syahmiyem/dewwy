@@ -3,6 +3,9 @@ import math
 import sys
 import os
 import random
+import time
+import threading
+import queue
 
 # Add project root to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -45,22 +48,52 @@ class ArcadeSimulator(arcade.Window):
         self.sensor = self.create_sensor()
         self.motors = self.create_motors()
         
-        print("Arcade simulator initialized")
+        # Serial communication
+        self.rx_messages = []
+        self.tx_messages = []
+        self.max_messages = 10
+        self.rx_bytes = 0
+        self.tx_bytes = 0
+        self.serial_active = False
+        self.last_serial_activity = time.time()
+        
+        # Component status
+        self.component_status = {
+            "battery": 100,  # Battery level percentage
+            "cpu_usage": 0,  # CPU usage percentage
+            "temperature": 25.0,  # Temperature in Celsius
+            "memory_used": 0,  # Memory usage percentage
+        }
+        
+        # UI controls
+        self.show_dashboard = True
+        self.show_serial_monitor = False
+        
+        # Performance tracking
+        self.frame_count = 0
+        self.fps = 0
+        self.last_fps_update = time.time()
+        
+        # Worker thread for time-consuming operations
+        self.worker_queue = queue.Queue()
+        self.worker_thread = threading.Thread(target=self._worker_thread, daemon=True)
+        self.worker_thread.start()
+        
+        print("Arcade simulator initialized successfully")
     
     def create_sensor(self):
-        """Create an ultrasonic sensor object compatible with the virtual_sensors interface"""
+        """Create an ultrasonic sensor object"""
         class ArcadeUltrasonicSensor:
             def __init__(self, simulator):
                 self.simulator = simulator
                 
             def measure_distance(self):
-                # Calculate distance to nearest obstacle in the direction
                 return self.simulator.calculate_distance()
         
         return ArcadeUltrasonicSensor(self)
     
     def create_motors(self):
-        """Create a motor controller object compatible with the virtual_motors interface"""
+        """Create a motor controller object"""
         class ArcadeMotorController:
             def __init__(self, simulator):
                 self.simulator = simulator
@@ -68,130 +101,188 @@ class ArcadeSimulator(arcade.Window):
                 self.direction = 0.0
             
             def move_forward(self, speed=1.0):
-                # Convert speed (0-1) to pixels per frame
-                speed_px = speed * 5
-                # Update position based on direction
+                speed_px = min(speed * 5, 5)  # Limit speed
                 self.simulator.robot_x += math.cos(self.simulator.robot_direction) * speed_px
                 self.simulator.robot_y += math.sin(self.simulator.robot_direction) * speed_px
                 
             def move_backward(self, speed=1.0):
-                # Convert speed (0-1) to pixels per frame
-                speed_px = speed * 5
-                # Update position based on opposite direction
+                speed_px = min(speed * 5, 5)  # Limit speed
                 self.simulator.robot_x -= math.cos(self.simulator.robot_direction) * speed_px
                 self.simulator.robot_y -= math.sin(self.simulator.robot_direction) * speed_px
             
             def turn_left(self, speed=1.0):
-                # Update direction counter-clockwise
-                turn_amount = speed * 0.1
+                turn_amount = min(speed * 0.1, 0.1)  # Limit turn rate
                 self.simulator.robot_direction -= turn_amount
                 
             def turn_right(self, speed=1.0):
-                # Update direction clockwise
-                turn_amount = speed * 0.1
+                turn_amount = min(speed * 0.1, 0.1)  # Limit turn rate
                 self.simulator.robot_direction += turn_amount
             
             def stop(self):
-                pass  # No need to do anything in the simulation
+                pass
         
         return ArcadeMotorController(self)
     
     def calculate_distance(self):
-        """Calculate distance to the nearest obstacle in the direction of travel"""
-        # Simple ray casting approach
+        """Calculate distance to nearest obstacle"""
+        # Simple optimized distance calculation
         min_distance = self.sensor_range
         
         # Direction vector
         dx = math.cos(self.robot_direction)
         dy = math.sin(self.robot_direction)
         
-        # Check each obstacle
         for obs in self.obstacles:
             rect_x, rect_y, rect_w, rect_h = obs
             
-            # Check all 4 sides of the obstacle
-            # Top side
-            distance = self._ray_line_intersection(
-                self.robot_x, self.robot_y, dx, dy,
-                rect_x, rect_y, rect_x + rect_w, rect_y
-            )
-            if distance and distance < min_distance:
-                min_distance = distance
-                
-            # Bottom side
-            distance = self._ray_line_intersection(
-                self.robot_x, self.robot_y, dx, dy,
-                rect_x, rect_y + rect_h, rect_x + rect_w, rect_y + rect_h
-            )
-            if distance and distance < min_distance:
-                min_distance = distance
-                
-            # Left side
-            distance = self._ray_line_intersection(
-                self.robot_x, self.robot_y, dx, dy,
-                rect_x, rect_y, rect_x, rect_y + rect_h
-            )
-            if distance and distance < min_distance:
-                min_distance = distance
-                
-            # Right side
-            distance = self._ray_line_intersection(
-                self.robot_x, self.robot_y, dx, dy,
-                rect_x + rect_w, rect_y, rect_x + rect_w, rect_y + rect_h
-            )
-            if distance and distance < min_distance:
-                min_distance = distance
+            # Simplified ray-box intersection
+            # Only check if the ray is pointing toward the obstacle
+            # This reduces unnecessary calculations
+            box_center_x = rect_x + rect_w/2
+            box_center_y = rect_y + rect_h/2
+            
+            # Vector from robot to box center
+            to_box_x = box_center_x - self.robot_x
+            to_box_y = box_center_y - self.robot_y
+            
+            # If ray is pointing somewhat toward the box
+            dot_product = dx * to_box_x + dy * to_box_y
+            if dot_product > 0:
+                # Now do the actual intersection check
+                distance = self._ray_box_intersection(
+                    self.robot_x, self.robot_y, dx, dy,
+                    rect_x, rect_y, rect_x + rect_w, rect_y + rect_h
+                )
+                if distance and distance < min_distance:
+                    min_distance = distance
         
-        # Add some noise
-        noise = random.uniform(-min_distance * 0.05, min_distance * 0.05)
-        result = min_distance + noise
+        # Add minor noise
+        noise = random.uniform(-min_distance * 0.03, min_distance * 0.03)
+        result = max(5, min(min_distance + noise, self.sensor_range))
         
-        # Ensure it's within valid range
-        result = max(5, min(result, self.sensor_range))
-        
-        # Store result for display
         self.last_distance = result
         return result
     
-    def _ray_line_intersection(self, ray_x, ray_y, ray_dx, ray_dy, line_x1, line_y1, line_x2, line_y2):
-        """Calculate intersection of a ray with a line segment"""
-        # Convert line segment to a vector
-        line_dx = line_x2 - line_x1
-        line_dy = line_y2 - line_y1
+    def _ray_box_intersection(self, ray_x, ray_y, ray_dx, ray_dy, min_x, min_y, max_x, max_y):
+        """Optimized ray-box intersection algorithm"""
+        t_min = float('-inf')
+        t_max = float('inf')
         
-        # Solve for t and s
-        denom = ray_dy * line_dx - ray_dx * line_dy
+        # X planes
+        if abs(ray_dx) < 1e-8:
+            if ray_x < min_x or ray_x > max_x:
+                return None
+        else:
+            t1 = (min_x - ray_x) / ray_dx
+            t2 = (max_x - ray_x) / ray_dx
+            if t1 > t2:
+                t1, t2 = t2, t1
+            t_min = max(t_min, t1)
+            t_max = min(t_max, t2)
+            if t_min > t_max or t_max < 0:
+                return None
         
-        # If denominator is 0, lines are parallel
-        if abs(denom) < 1e-6:
-            return None
+        # Y planes
+        if abs(ray_dy) < 1e-8:
+            if ray_y < min_y or ray_y > max_y:
+                return None
+        else:
+            t1 = (min_y - ray_y) / ray_dy
+            t2 = (max_y - ray_y) / ray_dy
+            if t1 > t2:
+                t1, t2 = t2, t1
+            t_min = max(t_min, t1)
+            t_max = min(t_max, t2)
+            if t_min > t_max or t_max < 0:
+                return None
         
-        s = (ray_dx * (line_y1 - ray_y) - ray_dy * (line_x1 - ray_x)) / denom
-        
-        # If s is outside [0, 1], intersection is not on the line segment
-        if s < 0 or s > 1:
-            return None
+        # Return distance to closest intersection
+        if t_min > 0:
+            return t_min * math.sqrt(ray_dx*ray_dx + ray_dy*ray_dy)
+        return t_max * math.sqrt(ray_dx*ray_dx + ray_dy*ray_dy)
+    
+    def _worker_thread(self):
+        """Background thread for non-critical operations"""
+        while True:
+            try:
+                # Get task from queue with timeout
+                task, args = self.worker_queue.get(timeout=0.5)
+                task(*args)
+                self.worker_queue.task_done()
+            except queue.Empty:
+                # No tasks, update system metrics
+                self._update_system_metrics()
+            except Exception as e:
+                print(f"Error in worker thread: {e}")
+            time.sleep(0.01)
+    
+    def _update_system_metrics(self):
+        """Update simulated system metrics"""
+        # Battery decreases
+        self.component_status["battery"] -= random.uniform(0, 0.05)
+        if self.component_status["battery"] < 0:
+            self.component_status["battery"] = 100
             
-        t = (line_dx * (line_y1 - ray_y) - line_dy * (line_x1 - ray_x)) / -denom
+        # CPU usage based on state
+        target_cpu = 30
+        if self.current_state == "Avoiding":
+            target_cpu = 70
         
-        # If t is negative, the intersection is behind the ray origin
-        if t < 0:
-            return None
-            
-        # Return the distance to intersection
-        return t * math.sqrt(ray_dx*ray_dx + ray_dy*ray_dy)
+        # Smooth CPU changes
+        current = self.component_status["cpu_usage"]
+        self.component_status["cpu_usage"] = current * 0.9 + target_cpu * 0.1
+        
+        # Temperature correlates with CPU
+        current_temp = self.component_status["temperature"]
+        target_temp = 25 + (self.component_status["cpu_usage"] / 100) * 15
+        self.component_status["temperature"] = current_temp * 0.98 + target_temp * 0.02
+        
+        # Memory usage
+        self.component_status["memory_used"] = min(100, max(0, 
+            self.component_status["memory_used"] + random.uniform(-0.5, 0.5)))
+    
+    def add_serial_message(self, message, direction="rx"):
+        """Add a message to either RX or TX history"""
+        timestamp = time.strftime("%H:%M:%S")
+        
+        if direction == "rx":
+            self.rx_messages.append({
+                "timestamp": timestamp,
+                "content": message
+            })
+            self.rx_bytes += len(message)
+            while len(self.rx_messages) > self.max_messages:
+                self.rx_messages.pop(0)
+        else:
+            self.tx_messages.append({
+                "timestamp": timestamp,
+                "content": message
+            })
+            self.tx_bytes += len(message)
+            while len(self.tx_messages) > self.max_messages:
+                self.tx_messages.pop(0)
+        
+        self.serial_active = True
+        self.last_serial_activity = time.time()
     
     def on_draw(self):
-        """Render the screen"""
+        """Render the screen - This runs on the main thread"""
+        # Track performance
+        self.frame_count += 1
+        now = time.time()
+        if now - self.last_fps_update >= 1.0:
+            self.fps = self.frame_count
+            self.frame_count = 0
+            self.last_fps_update = now
+            
+        # Clear screen and start drawing
         self.clear()
         
         # Draw obstacles
         for obs in self.obstacles:
             arcade.draw_rectangle_filled(
-                obs[0] + obs[2]/2, # x center
-                obs[1] + obs[3]/2, # y center
-                obs[2], # width
-                obs[3], # height
+                obs[0] + obs[2]/2, obs[1] + obs[3]/2,
+                obs[2], obs[3],
                 arcade.color.RED
             )
         
@@ -231,7 +322,7 @@ class ArcadeSimulator(arcade.Window):
             2
         )
         
-        # Draw status text
+        # Draw basic status info (minimal version always visible)
         arcade.draw_text(
             f"Distance: {self.last_distance:.1f}px",
             20, self.height - 30,
@@ -247,57 +338,167 @@ class ArcadeSimulator(arcade.Window):
         )
         
         arcade.draw_text(
-            f"Emotion: {self.current_emotion}",
-            20, self.height - 90,
+            f"FPS: {self.fps}",
+            self.width - 100, self.height - 30,
             arcade.color.BLACK,
             16
         )
         
-        autopilot_status = "ON" if self.autopilot else "OFF"
+        # Draw dashboard if enabled
+        if self.show_dashboard:
+            self._draw_simple_dashboard()
+        
+        # Draw serial monitor if enabled
+        if self.show_serial_monitor:
+            self._draw_simple_serial_monitor()
+    
+    def _draw_simple_dashboard(self):
+        """Draw a simplified dashboard with system status"""
+        # Background panel
+        arcade.draw_rectangle_filled(
+            120, 120, 220, 220,
+            (0, 0, 0, 150)  # Semi-transparent black
+        )
+        
+        # Battery level
+        battery = self.component_status["battery"]
+        battery_color = arcade.color.GREEN
+        if battery < 30:
+            battery_color = arcade.color.RED
+        elif battery < 60:
+            battery_color = arcade.color.YELLOW
+            
         arcade.draw_text(
-            f"Autopilot: {autopilot_status}",
-            20, self.height - 120,
-            arcade.color.BLACK,
+            f"Battery: {battery:.0f}%",
+            30, 200,
+            battery_color,
+            14
+        )
+        
+        # CPU usage
+        arcade.draw_text(
+            f"CPU: {self.component_status['cpu_usage']:.0f}%",
+            30, 170,
+            arcade.color.WHITE,
+            14
+        )
+        
+        # Temperature
+        arcade.draw_text(
+            f"Temp: {self.component_status['temperature']:.1f}°C",
+            30, 140,
+            arcade.color.WHITE,
+            14
+        )
+        
+        # Serial status
+        serial_status = "ACTIVE" if self.serial_active else "IDLE"
+        arcade.draw_text(
+            f"Serial: {serial_status}",
+            30, 110,
+            arcade.color.GREEN if self.serial_active else arcade.color.GRAY,
+            14
+        )
+        
+        # Memory use
+        arcade.draw_text(
+            f"Mem: {self.component_status['memory_used']:.0f}%",
+            30, 80,
+            arcade.color.WHITE,
+            14
+        )
+    
+    def _draw_simple_serial_monitor(self):
+        """Draw a simplified serial monitor"""
+        # Background panel
+        arcade.draw_rectangle_filled(
+            self.width - 150, 250, 280, 300,
+            (0, 0, 0, 150)  # Semi-transparent black
+        )
+        
+        # Title
+        arcade.draw_text(
+            "SERIAL MONITOR",
+            self.width - 280, 380,
+            arcade.color.WHITE,
             16
         )
         
-        # Draw instructions
-        instructions = [
-            "Controls:",
-            "Arrow Keys: Manual Movement",
-            "Space: Stop",
-            "A: Toggle Autopilot",
-            "R: Reset Position",
-            "Q: Quit"
-        ]
+        # Recent RX messages
+        y_pos = 350
+        arcade.draw_text(
+            "RX Messages:",
+            self.width - 280, y_pos,
+            arcade.color.GREEN,
+            12
+        )
+        y_pos -= 20
         
-        for i, instruction in enumerate(instructions):
+        for i, msg in enumerate(reversed(self.rx_messages[:5])):
             arcade.draw_text(
-                instruction,
-                600, 150 - (i * 25),
-                arcade.color.BLACK,
-                12
+                f"{msg['timestamp']}: {msg['content'][:20]}",
+                self.width - 280, y_pos - (i * 20),
+                arcade.color.WHITE,
+                10
             )
+        
+        # Recent TX messages
+        y_pos = 230
+        arcade.draw_text(
+            "TX Messages:",
+            self.width - 280, y_pos,
+            arcade.color.ORANGE,
+            12
+        )
+        y_pos -= 20
+        
+        for i, msg in enumerate(reversed(self.tx_messages[:5])):
+            arcade.draw_text(
+                f"{msg['timestamp']}: {msg['content'][:20]}",
+                self.width - 280, y_pos - (i * 20),
+                arcade.color.WHITE,
+                10
+            )
+        
+        # Byte counts
+        arcade.draw_text(
+            f"RX: {self.rx_bytes} bytes  TX: {self.tx_bytes} bytes",
+            self.width - 280, 120,
+            arcade.color.WHITE,
+            10
+        )
     
     def on_update(self, delta_time):
-        """Update the simulation"""
-        # Get distance reading
-        distance = self.sensor.measure_distance()
+        """Update simulation state - keep this light and fast"""
+        # Check if serial connection is still active
+        if time.time() - self.last_serial_activity > 1.0:
+            self.serial_active = False
         
         # Process keyboard input
         if arcade.key.UP in self.keys_pressed:
             self.motors.move_forward(0.5)
-        if arcade.key.DOWN in self.keys_pressed:
+            self.add_serial_message("FWD command", "tx")
+        elif arcade.key.DOWN in self.keys_pressed:
             self.motors.move_backward(0.5)
-        if arcade.key.LEFT in self.keys_pressed:
+            self.add_serial_message("BCK command", "tx")
+        elif arcade.key.LEFT in self.keys_pressed:
             self.motors.turn_left(0.5)
-        if arcade.key.RIGHT in self.keys_pressed:
+            self.add_serial_message("LFT command", "tx")
+        elif arcade.key.RIGHT in self.keys_pressed:
             self.motors.turn_right(0.5)
+            self.add_serial_message("RGT command", "tx")
         
-        # Autopilot control
+        # Distance reading - do this every frame
+        distance = self.sensor.measure_distance()
+        
+        # Periodically add distance reading to serial monitor
+        if random.random() < 0.05:  # 5% chance per frame
+            self.add_serial_message(f"DIST:{int(distance)}", "rx")
+        
+        # Autopilot control (only if enabled)
         if self.autopilot:
             if distance < 50:
-                # Obstacle detected - turn away
+                # Obstacle detected - turn to avoid
                 if random.choice([True, False]):
                     self.motors.turn_left(0.2)
                 else:
@@ -305,13 +506,13 @@ class ArcadeSimulator(arcade.Window):
                 self.current_state = "Avoiding"
             else:
                 # Occasionally change direction during roaming
-                if random.random() < 0.02:  # 2% chance per update
+                if random.random() < 0.01:  # 1% chance per update
                     if random.choice([True, False]):
                         self.motors.turn_left(0.1)
                     else:
                         self.motors.turn_right(0.1)
                 else:
-                    self.motors.move_forward(0.2)  # Move forward
+                    self.motors.move_forward(0.2)
                 self.current_state = "Roaming"
         
         # Keep robot within screen bounds
@@ -319,7 +520,7 @@ class ArcadeSimulator(arcade.Window):
     
     def _constrain_to_bounds(self):
         """Keep the robot within the screen bounds"""
-        margin = self.robot_radius + 10
+        margin = self.robot_radius
         
         if self.robot_x < margin:
             self.robot_x = margin
@@ -337,16 +538,23 @@ class ArcadeSimulator(arcade.Window):
         
         if key == arcade.key.SPACE:
             self.motors.stop()
+            self.add_serial_message("STP command", "tx")
         elif key == arcade.key.A:
             # Toggle autopilot
             self.autopilot = not self.autopilot
+            self.add_serial_message(f"Autopilot {'ON' if self.autopilot else 'OFF'}", "tx")
         elif key == arcade.key.R:
             # Reset robot position
             self.robot_x = self.width // 2
             self.robot_y = self.height // 2
             self.robot_direction = 0
+        elif key == arcade.key.S:
+            # Toggle serial monitor
+            self.show_serial_monitor = not self.show_serial_monitor
+        elif key == arcade.key.D:
+            # Toggle dashboard
+            self.show_dashboard = not self.show_dashboard
         elif key == arcade.key.Q:
-            # Quit
             arcade.close_window()
     
     def on_key_release(self, key, modifiers):
@@ -360,14 +568,13 @@ class ArcadeSimulator(arcade.Window):
         self.current_emotion = emotion
     
     def close(self):
-        """Close the simulator"""
-        arcade.close_window()
+        """Clean shutdown"""
+        print("Closing simulator window")
 
 
-# When run directly, start the simulator
-def main():
+def run_simulator():
     simulator = ArcadeSimulator()
     arcade.run()
 
 if __name__ == "__main__":
-    main()
+    run_simulator()

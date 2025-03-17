@@ -1,7 +1,7 @@
 [wokwi]
 version = 1
-firmware = "motor_control.ino"
-elf = "build/arduino.avr.uno/motor_control.ino.elf"
+firmware = "main_arduino/main_arduino.ino"
+elf = "build/arduino.avr.uno/main_arduino.ino.elf"
 
 [[pins]]
 name = "PWMA"
