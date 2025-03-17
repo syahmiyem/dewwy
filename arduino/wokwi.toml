@@ -1,0 +1,15 @@
+[wokwi]
+version = 1
+firmware = "motor_control.ino"
+elf = "build/arduino.avr.uno/motor_control.ino.elf"
+
+[[pins]]
+name = "PWMA"
+x = 100
+y = 50
+analog = true
+
+[[pins]]
+name = "Ultrasonic"
+x = 150
+y = 100
