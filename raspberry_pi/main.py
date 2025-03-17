@@ -1,0 +1,185 @@
+import time
+import signal
+import sys
+import os
+import threading
+import tkinter as tk
+import argparse
+
+# Add project root to Python path for proper importing
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Import components
+from raspberry_pi.display.oled_interface import OLEDDisplay
+from raspberry_pi.communication.serial_handler import SerialHandler
+from raspberry_pi.behavior.state_machine import RobotStateMachine, RobotState
+from raspberry_pi.behavior.robot_personality import RobotPersonality, Emotion
+from simulation.virtual_sensors import UltrasonicSensor
+from simulation.virtual_motors import MotorController
+from simulation.gui_display import RobotVisualizer
+from simulation.robot_simulator import RobotSimulator
+
+class PetRobot:
+    def __init__(self, simulation_mode=True, gui_mode=True):
+        print("Initializing Pet Robot...")
+        self.simulation_mode = simulation_mode
+        self.gui_mode = gui_mode
+        self.running = True
+        
+        # Initialize GUI if requested
+        self.root = None
+        self.visualizer = None
+        if gui_mode:
+            self.root = tk.Tk()
+            self.root.title("Pet Robot Simulation")
+            self.root.protocol("WM_DELETE_WINDOW", self.shutdown)
+            
+            # Create simulator with GUI
+            self.simulator = RobotSimulator(self.root)
+            self.sensor = self.simulator.sensor
+            self.motors = self.simulator.motors
+        else:
+            # No GUI - use simple simulated components
+            self.sensor = UltrasonicSensor()
+            self.motors = MotorController()
+        
+        # Initialize components
+        self.display = OLEDDisplay(simulation=simulation_mode)
+        self.display.set_status("Starting up...")
+        
+        # Initialize communication if not in pure simulation mode
+        if not simulation_mode:
+            self.serial = SerialHandler(simulation=False)
+            # Wire up the hardware interfaces through serial
+            self.sensor = self._create_sensor_interface(self.serial)
+            self.motors = self._create_motor_interface(self.serial)
+        
+        # Initialize personality and state machine
+        self.personality = RobotPersonality(display=self.display)
+        self.state_machine = RobotStateMachine(self.sensor, self.motors, self.personality)
+        
+        # Setup signal handlers for clean shutdown
+        signal.signal(signal.SIGINT, self._signal_handler)
+        signal.signal(signal.SIGTERM, self._signal_handler)
+        
+        # Main thread control
+        self.main_thread = None
+    
+    def _create_sensor_interface(self, serial):
+        """Create a sensor interface that works through serial connection"""
+        class SerialUltrasonicSensor:
+            def __init__(self, serial_handler):
+                self.serial = serial_handler
+                
+            def measure_distance(self):
+                return self.serial.get_distance()
+                
+        return SerialUltrasonicSensor(serial)
+    
+    def _create_motor_interface(self, serial):
+        """Create a motor interface that works through serial connection"""
+        class SerialMotorController:
+            def __init__(self, serial_handler):
+                self.serial = serial_handler
+                
+            def move_forward(self, speed=1.0):
+                speed_val = int(min(255, max(0, speed * 255)))
+                self.serial.send_command(f"FWD")
+                
+            def move_backward(self, speed=1.0):
+                speed_val = int(min(255, max(0, speed * 255)))
+                self.serial.send_command(f"BCK")
+                
+            def turn_left(self, speed=1.0):
+                speed_val = int(min(255, max(0, speed * 255)))
+                self.serial.send_command(f"LFT")
+                
+            def turn_right(self, speed=1.0):
+                speed_val = int(min(255, max(0, speed * 255)))
+                self.serial.send_command(f"RGT")
+                
+            def stop(self):
+                self.serial.send_command("STP")
+                
+        return SerialMotorController(serial)
+    
+    def start(self):
+        """Start the robot's main loop"""
+        print("Starting pet robot...")
+        self.display.set_status("Running")
+        self.display.set_emotion(Emotion.HAPPY)
+        
+        # Start in a separate thread if using GUI
+        if self.gui_mode:
+            self.main_thread = threading.Thread(target=self._main_loop)
+            self.main_thread.daemon = True
+            self.main_thread.start()
+            
+            # Start the GUI main loop (this blocks until window is closed)
+            self.root.mainloop()
+        else:
+            # Run directly in this thread
+            self._main_loop()
+    
+    def _main_loop(self):
+        """Main control loop for the robot"""
+        update_interval = 0.1  # seconds
+        
+        try:
+            while self.running:
+                start_time = time.time()
+                
+                # Update the state machine
+                self.state_machine.update()
+                
+                # Print current state and emotion (for debugging/simulation)
+                print(f"State: {self.state_machine.current_state}, " +
+                      f"Emotion: {self.personality.get_emotion()}, " +
+                      f"Distance: {self.sensor.measure_distance():.1f}cm")
+                
+                # Calculate sleep time to maintain consistent update rate
+                elapsed = time.time() - start_time
+                sleep_time = max(0, update_interval - elapsed)
+                time.sleep(sleep_time)
+                
+        except Exception as e:
+            print(f"Error in main loop: {e}")
+        finally:
+            # Clean shutdown
+            if not self.gui_mode:
+                self.shutdown()
+    
+    def _signal_handler(self, sig, frame):
+        """Handle system signals for clean shutdown"""
+        print("Signal received, shutting down...")
+        self.shutdown()
+    
+    def shutdown(self):
+        """Clean shutdown of all components"""
+        print("Shutting down pet robot...")
+        self.running = False
+        
+        # Stop components
+        self.display.shutdown()
+        if hasattr(self, 'serial') and self.serial:
+            self.serial.disconnect()
+        
+        # Stop GUI if active
+        if self.gui_mode and self.root:
+            self.root.quit()
+        
+        sys.exit(0)
+
+if __name__ == "__main__":
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description="Pet Robot Control System")
+    parser.add_argument("--no-simulation", action="store_true", 
+                        help="Connect to real hardware instead of simulation")
+    parser.add_argument("--no-gui", action="store_true",
+                        help="Run without GUI (console mode)")
+    args = parser.parse_args()
+    
+    # Create and start pet robot
+    robot = PetRobot(simulation_mode=not args.no_simulation, 
+                     gui_mode=not args.no_gui)
+    robot.start()

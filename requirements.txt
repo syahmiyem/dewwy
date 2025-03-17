@@ -1,0 +1,11 @@
+# Core requirements
+pyserial>=3.5
+pillow>=8.0.0
+numpy>=1.19.0
+
+# For OLED display (uncomment when using real hardware)
+# luma.oled>=3.8.0
+# luma.core>=2.3.0
+
+# For testing
+pytest>=6.2.0
