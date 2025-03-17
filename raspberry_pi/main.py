@@ -16,7 +16,6 @@ from raspberry_pi.behavior.state_machine import RobotStateMachine, RobotState
 from raspberry_pi.behavior.robot_personality import RobotPersonality, Emotion
 from simulation.virtual_sensors import UltrasonicSensor
 from simulation.virtual_motors import MotorController
-from simulation.gui_display import RobotVisualizer
 from simulation.robot_simulator import RobotSimulator
 
 class PetRobot:
@@ -28,12 +27,14 @@ class PetRobot:
         
         # Initialize GUI if requested
         self.root = None
-        self.visualizer = None
+        self.simulator = None
         if gui_mode:
             self.root = tk.Tk()
-            self.root.title("Pet Robot Simulation")
+            self.root.title("Dewwy - Pet Robot Simulation")
+            self.root.geometry("850x700")  # Set window size
             self.root.protocol("WM_DELETE_WINDOW", self.shutdown)
             
+            print("Creating simulator interface...")
             # Create simulator with GUI
             self.simulator = RobotSimulator(self.root)
             self.sensor = self.simulator.sensor
@@ -111,11 +112,13 @@ class PetRobot:
         
         # Start in a separate thread if using GUI
         if self.gui_mode:
+            print("Starting in GUI mode - launching window...")
             self.main_thread = threading.Thread(target=self._main_loop)
             self.main_thread.daemon = True
             self.main_thread.start()
             
             # Start the GUI main loop (this blocks until window is closed)
+            print("Starting Tkinter mainloop...")
             self.root.mainloop()
         else:
             # Run directly in this thread
@@ -133,9 +136,15 @@ class PetRobot:
                 self.state_machine.update()
                 
                 # Print current state and emotion (for debugging/simulation)
-                print(f"State: {self.state_machine.current_state}, " +
-                      f"Emotion: {self.personality.get_emotion()}, " +
-                      f"Distance: {self.sensor.measure_distance():.1f}cm")
+                state = self.state_machine.current_state
+                emotion = self.personality.get_emotion()
+                distance = self.sensor.measure_distance()
+                
+                print(f"State: {state}, Emotion: {emotion}, Distance: {distance:.1f}cm")
+                
+                # Update the simulator UI if using GUI
+                if self.gui_mode and self.simulator:
+                    self.simulator.set_state_and_emotion(state, emotion)
                 
                 # Calculate sleep time to maintain consistent update rate
                 elapsed = time.time() - start_time
@@ -144,6 +153,8 @@ class PetRobot:
                 
         except Exception as e:
             print(f"Error in main loop: {e}")
+            import traceback
+            traceback.print_exc()
         finally:
             # Clean shutdown
             if not self.gui_mode:
@@ -159,16 +170,29 @@ class PetRobot:
         print("Shutting down pet robot...")
         self.running = False
         
-        # Stop components
-        self.display.shutdown()
+        # Stop components - add safety checks
+        if hasattr(self, 'display') and self.display:
+            try:
+                self.display.shutdown()
+            except Exception as e:
+                print(f"Error shutting down display: {e}")
+                
         if hasattr(self, 'serial') and self.serial:
             self.serial.disconnect()
         
         # Stop GUI if active
         if self.gui_mode and self.root:
-            self.root.quit()
+            try:
+                self.root.quit()
+            except Exception as e:
+                print(f"Error closing GUI: {e}")
         
-        sys.exit(0)
+        # Don't call sys.exit directly - it can cause issues in Tkinter
+        # Instead, schedule the exit to happen after Tkinter has cleaned up
+        if self.gui_mode and self.root:
+            self.root.after(100, lambda: os._exit(0))
+        else:
+            sys.exit(0)
 
 if __name__ == "__main__":
     # Parse command line arguments
