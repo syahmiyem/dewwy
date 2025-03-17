@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dewwy Pet Robot</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Dewwy Pet Robot</h1>
+            <p>An offline AI pet robot demo</p>
+        </header>
+        
+        <div class="robot-container">
+            <div class="robot-face" id="robot-face">
+                <!-- Face will be drawn by JavaScript -->
+            </div>
+            
+            <div class="robot-status">
+                <div class="status-item">
+                    <span class="label">State:</span>
+                    <span class="value" id="robot-state">Initializing...</span>
+                </div>
+                <div class="status-item">
+                    <span class="label">Emotion:</span>
+                    <span class="value" id="robot-emotion">Neutral</span>
+                </div>
+                <div class="status-item">
+                    <span class="label">Distance:</span>
+                    <span class="value" id="robot-distance">100cm</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="interaction-panel">
+            <h2>Interaction</h2>
+            <div class="controls">
+                <div class="control-group">
+                    <h3>States</h3>
+                    <button onclick="triggerState('idle')">Idle</button>
+                    <button onclick="triggerState('roaming')">Roaming</button>
+                    <button onclick="triggerState('playing')">Playing</button>
+                    <button onclick="triggerState('sleeping')">Sleeping</button>
+                    <button onclick="triggerState('curious')">Curious</button>
+                </div>
+                
+                <div class="control-group">
+                    <h3>Emotions</h3>
+                    <button onclick="triggerEmotion('happy')">Happy</button>
+                    <button onclick="triggerEmotion('sad')">Sad</button>
+                    <button onclick="triggerEmotion('excited')">Excited</button>
+                    <button onclick="triggerEmotion('sleepy')">Sleepy</button>
+                    <button onclick="triggerEmotion('scared')">Scared</button>
+                </div>
+            </div>
+            
+            <div class="obstacle-simulator">
+                <h3>Obstacle Simulation</h3>
+                <input type="range" id="obstacle-distance" min="10" max="200" value="100" 
+                       oninput="document.getElementById('distance-value').textContent = this.value + 'cm'">
+                <span id="distance-value">100cm</span>
+                <button onclick="simulateObstacle()">Simulate Obstacle</button>
+            </div>
+        </div>
+        
+        <div class="message-panel">
+            <h2>Activity Log</h2>
+            <div id="messages" class="message-list">
+                <!-- Messages will be populated by JavaScript -->
+            </div>
+        </div>
+        
+        <div class="personality-panel">
+            <h2>Personality Traits</h2>
+            <div id="personality-traits" class="traits-container">
+                <!-- Traits will be populated by JavaScript -->
+            </div>
+        </div>
+
+        <footer>
+            <p>
+                <a href="/dashboard">View Dashboard</a> | 
+                <a href="https://github.com/yourusername/dewwy" target="_blank">GitHub Repository</a>
+            </p>
+        </footer>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/robot.js') }}"></script>
+</body>
+</html>

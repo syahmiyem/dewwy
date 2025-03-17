@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dewwy Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Dewwy Dashboard</h1>
+            <a href="/" class="back-link">← Back to Main</a>
+        </header>
+        
+        <div class="dashboard-grid">
+            <div class="dashboard-card">
+                <h2>System Status</h2>
+                <div class="dashboard-metrics">
+                    <div class="metric">
+                        <span class="metric-label">State:</span>
+                        <span class="metric-value" id="dash-state">-</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Emotion:</span>
+                        <span class="metric-value" id="dash-emotion">-</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Distance:</span>
+                        <span class="metric-value" id="dash-distance">-</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="dashboard-card">
+                <h2>Personality Profile</h2>
+                <div id="dash-traits" class="dashboard-traits">
+                    <!-- Traits bars will be populated by JavaScript -->
+                </div>
+            </div>
+            
+            <div class="dashboard-card">
+                <h2>Activity Log</h2>
+                <div id="dash-messages" class="dashboard-messages">
+                    <!-- Messages will be populated by JavaScript -->
+                </div>
+            </div>
+            
+            <div class="dashboard-card">
+                <h2>Advanced Controls</h2>
+                <div class="advanced-controls">
+                    <button onclick="triggerState('startled')">Trigger Startled</button>
+                    <button onclick="triggerState('avoiding')">Trigger Avoidance</button>
+                    <button onclick="triggerEmotion('grumpy')">Make Grumpy</button>
+                    <button onclick="triggerEmotion('playful')">Make Playful</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/robot.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+</body>
+</html>
