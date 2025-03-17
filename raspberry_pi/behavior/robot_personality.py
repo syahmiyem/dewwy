@@ -98,6 +98,8 @@ class RobotPersonality:
         
         elif new_state == RobotState.SLEEPING:
             self.set_emotion(Emotion.SLEEPY)
+            # When entering sleep state, ensure movement stops
+            # The simulator now handles this by checking the current emotion
     
     def set_emotion(self, emotion):
         """Set the robot's current emotional state"""

@@ -33,13 +33,29 @@ class ArcadeSimulator(arcade.Window):
         self.robot_radius = 50
         self.robot_direction = 0  # 0 radians = facing right
         
-        # Obstacles - format: [x, y, width, height]
-        self.obstacles = [
+        # Create border obstacles with some thickness
+        wall_thickness = 20
+        self.border_obstacles = [
+            # Left wall
+            [0, 0, wall_thickness, height],
+            # Right wall
+            [width - wall_thickness, 0, wall_thickness, height],
+            # Top wall
+            [0, height - wall_thickness, width, wall_thickness],
+            # Bottom wall
+            [0, 0, width, wall_thickness]
+        ]
+        
+        # Interior obstacles - format: [x, y, width, height]
+        self.interior_obstacles = [
             [100, 100, 100, 100],
             [600, 400, 100, 100],
             [300, 500, 200, 50],
             [700, 100, 80, 150]
         ]
+        
+        # All obstacles (combine border and interior obstacles)
+        self.obstacles = self.border_obstacles + self.interior_obstacles
         
         # Sensor properties
         self.sensor_range = 200
@@ -87,6 +103,17 @@ class ArcadeSimulator(arcade.Window):
         self.worker_queue = queue.Queue()
         self.worker_thread = threading.Thread(target=self._worker_thread, daemon=True)
         self.worker_thread.start()
+        
+        # Add variables to track obstacle avoidance behavior
+        self.avoiding_obstacle = False
+        self.avoidance_start_time = 0
+        self.avoidance_turn_direction = None  # Will be set to "left" or "right"
+        self.avoidance_step = 0  # 0=backup, 1=turn, 2=move forward
+        self.stuck_detection = {
+            "last_positions": [],  # Store recent positions
+            "position_sample_time": 0,  # When we last sampled position
+            "stuck_count": 0  # Counter for being stuck in same area
+        }
         
         print("Arcade simulator initialized successfully")
     
@@ -234,8 +261,16 @@ class ArcadeSimulator(arcade.Window):
         # Clear screen and start drawing
         self.clear()
         
-        # Draw obstacles
-        for obs in self.obstacles:
+        # Draw border obstacles with different color
+        for obs in self.border_obstacles:
+            arcade.draw_rectangle_filled(
+                obs[0] + obs[2]/2, obs[1] + obs[3]/2,
+                obs[2], obs[3],
+                arcade.color.DARK_BLUE  # Use a different color for borders
+            )
+        
+        # Draw interior obstacles
+        for obs in self.interior_obstacles:
             arcade.draw_rectangle_filled(
                 obs[0] + obs[2]/2, obs[1] + obs[3]/2,
                 obs[2], obs[3],
@@ -317,6 +352,18 @@ class ArcadeSimulator(arcade.Window):
         if time.time() - self.last_serial_activity > 1.0:
             self.serial_active = False
         
+        # Check if robot is in sleep state - if so, stop all movement
+        if self.current_emotion == "sleepy":
+            self.motors.stop()
+            self.current_state = "Sleeping"
+            return
+            
+        # Sample current position periodically for stuck detection
+        current_time = time.time()
+        if current_time - self.stuck_detection["position_sample_time"] > 1.0:
+            self.stuck_detection["position_sample_time"] = current_time
+            self.check_if_stuck()
+        
         # Process keyboard input
         if arcade.key.UP in self.keys_pressed:
             self.motors.move_forward(0.5)
@@ -340,30 +387,132 @@ class ArcadeSimulator(arcade.Window):
         
         # Autopilot control (only if enabled)
         if self.autopilot:
-            if distance < 50:
-                # Obstacle detected - immediately turn in random direction (Roomba style)
-                turning_direction = random.choice([True, False])  # True = left, False = right
-                if turning_direction:
-                    self.motors.turn_left(0.5)  # Increased turn speed for faster response
-                    self.add_serial_message("LFT (Auto)", "tx")
-                else:
-                    self.motors.turn_right(0.5)  # Increased turn speed for faster response
-                    self.add_serial_message("RGT (Auto)", "tx")
-                self.current_state = "Avoiding"
-            else:
-                # Occasionally change direction during roaming
-                if random.random() < 0.01:  # 1% chance per update
-                    if random.choice([True, False]):
-                        self.motors.turn_left(0.1)
-                    else:
-                        self.motors.turn_right(0.1)
-                else:
-                    self.motors.move_forward(0.2)
-                self.current_state = "Roaming"
+            self.handle_autopilot(distance)
         
         # Keep robot within screen bounds
         self._constrain_to_bounds()
-    
+
+    def handle_autopilot(self, distance):
+        """Handle autopilot navigation with improved obstacle avoidance"""
+        # If we're currently in an obstacle avoidance maneuver
+        if self.avoiding_obstacle:
+            self.execute_avoidance_maneuver()
+            return
+            
+        # Start obstacle avoidance if distance is too close
+        if distance < 80:  # Increased detection distance for earlier response
+            # Begin a new avoidance maneuver
+            self.start_avoidance_maneuver()
+            self.current_state = "Avoiding"
+        else:
+            # Normal roaming behavior
+            if random.random() < 0.01:  # 1% chance per update
+                if random.choice([True, False]):
+                    self.motors.turn_left(0.1)
+                else:
+                    self.motors.turn_right(0.1)
+            else:
+                self.motors.move_forward(0.2)
+            self.current_state = "Roaming"
+
+    def start_avoidance_maneuver(self):
+        """Start a new obstacle avoidance maneuver"""
+        self.avoiding_obstacle = True
+        self.avoidance_start_time = time.time()
+        self.avoidance_step = 0  # Start with backing up
+        
+        # Choose a turn direction, with bias away from edges
+        center_x = self.width / 2
+        if self.robot_x < center_x:
+            # If on left side, bias toward turning right
+            self.avoidance_turn_direction = "right" if random.random() < 0.7 else "left"
+        else:
+            # If on right side, bias toward turning left
+            self.avoidance_turn_direction = "left" if random.random() < 0.7 else "right"
+            
+        # If we've been getting stuck, make more dramatic turns
+        turn_multiplier = min(1.0 + (self.stuck_detection["stuck_count"] * 0.3), 2.5)
+        self.avoidance_turn_angle = random.uniform(0.8, 1.5) * turn_multiplier
+
+    def execute_avoidance_maneuver(self):
+        """Execute the ongoing obstacle avoidance maneuver"""
+        current_time = time.time()
+        elapsed = current_time - self.avoidance_start_time
+        
+        if self.avoidance_step == 0:
+            # Step 0: Back up briefly to get away from the obstacle
+            self.motors.move_backward(0.5)
+            self.add_serial_message("BCK (Auto)", "tx")
+            
+            # Move to next step after backing up for a short time
+            if elapsed > 0.3:
+                self.avoidance_step = 1
+                self.avoidance_start_time = current_time
+                
+        elif self.avoidance_step == 1:
+            # Step 1: Turn in the chosen direction
+            turn_duration = self.avoidance_turn_angle  # Time to turn is based on desired angle
+            
+            if self.avoidance_turn_direction == "left":
+                self.motors.turn_left(1.0)  # Turn at full speed
+                self.add_serial_message("LFT (Auto)", "tx")
+            else:
+                self.motors.turn_right(1.0)  # Turn at full speed
+                self.add_serial_message("RGT (Auto)", "tx")
+                
+            # Move to next step after turning for the calculated duration
+            if elapsed > turn_duration:
+                self.avoidance_step = 2
+                self.avoidance_start_time = current_time
+                
+        elif self.avoidance_step == 2:
+            # Step 2: Move forward to find a clear path
+            self.motors.move_forward(0.4)
+            
+            # Take a new distance reading
+            new_distance = self.sensor.measure_distance()
+            
+            # If we encounter another obstacle immediately, restart avoidance
+            if new_distance < 60:
+                self.start_avoidance_maneuver()
+                return
+                
+            # Otherwise, finish the maneuver after moving forward for a bit
+            if elapsed > 0.5:
+                self.avoiding_obstacle = False
+                self.current_state = "Roaming"
+
+    def check_if_stuck(self):
+        """Check if the robot is stuck in the same area"""
+        # Add current position to history
+        current_pos = (int(self.robot_x), int(self.robot_y))
+        self.stuck_detection["last_positions"].append(current_pos)
+        
+        # Keep only the last 5 positions
+        if len(self.stuck_detection["last_positions"]) > 5:
+            self.stuck_detection["last_positions"].pop(0)
+            
+        # If we have enough samples, check if they're all close together
+        if len(self.stuck_detection["last_positions"]) >= 5:
+            # Calculate maximum distance between any two points
+            max_distance = 0
+            for pos1 in self.stuck_detection["last_positions"]:
+                for pos2 in self.stuck_detection["last_positions"]:
+                    dist = ((pos1[0] - pos2[0]) ** 2 + (pos1[1] - pos2[1]) ** 2) ** 0.5
+                    max_distance = max(max_distance, dist)
+            
+            # If all positions are within a small range, we're stuck
+            if max_distance < 20:
+                self.stuck_detection["stuck_count"] += 1
+                
+                # If we've been stuck multiple times, do a more drastic maneuver
+                if self.stuck_detection["stuck_count"] > 2:
+                    # Clear our current path and do something random
+                    self.start_avoidance_maneuver()
+            else:
+                # Reset stuck counter if we're moving normally
+                self.stuck_detection["stuck_count"] = max(0, self.stuck_detection["stuck_count"] - 1)
+
     def _constrain_to_bounds(self):
         """Keep the robot within the screen bounds"""
         margin = self.robot_radius
