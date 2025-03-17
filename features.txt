@@ -1,0 +1,98 @@
+# Dewwy - Offline Pet Robot
+
+## Introduction
+Dewwy is an autonomous pet robot built with a hybrid Raspberry Pi and Arduino architecture. 
+It's designed to behave like a real pet with unique personality traits, emotions, and
+autonomous movement. Unlike cloud-based robots, Dewwy operates completely offline, 
+ensuring privacy and consistent operation without internet dependency.
+
+## Current Features
+
+### Personality System
+- Unique personality generation with randomized traits:
+  * Openness (curiosity level)
+  * Friendliness (interaction style)
+  * Activeness (movement frequency)
+  * Expressiveness (emotion intensity)
+  * Patience (reaction to obstacles/interruptions)
+- Persistent memory of interactions and experiences
+- Emotion states: happy, sad, excited, neutral, sleepy, curious, scared, playful, grumpy
+- Random mood changes based on personality traits
+
+### Pet-like Behaviors
+- Autonomous movement with realistic pet-like patterns
+- States similar to a real pet: idle, roaming, avoiding, searching, sleeping, playing
+- Gets startled by sudden obstacles
+- Shows curiosity about surroundings
+- Fidgets when idle (like a pet shifting position)
+- Gets bored over time and seeks play
+- Gets tired after activity and needs to sleep
+- "Breathing" movements during sleep state
+
+### Navigation & Movement
+- Advanced Roomba-style obstacle avoidance:
+  * 3-step avoidance: back away, turn, move forward
+  * Smart direction selection based on environment
+  * Stuck detection and recovery
+- Border detection to avoid falling off edges
+- Different movement patterns based on emotional state
+- Adjustable movement speed and turning rates
+
+### Hardware Integration
+- HC-SR04 ultrasonic sensor for obstacle detection
+- TB6612FNG motor driver for precise movement control
+- OLED display for facial expressions
+- Arduino for real-time control of sensors and motors
+- Raspberry Pi for higher-level intelligence and decision making
+
+### Simulation Environment
+- Arcade-based graphical simulator for testing and demonstration
+- Visualized emotions on simulated OLED display
+- Dashboard showing system metrics (battery, CPU, temperature)
+- Serial communication monitor
+- Virtual sensor readings and motor controls
+
+### Learning & Memory
+- SQLite database for storing interaction history
+- Learning system that builds confidence in responses over time
+- Remembers past interactions and emotional states
+- Adapts behavior based on experience
+
+### Software Architecture
+- Component-based design for modularity
+- State machine for behavior control
+- Clean separation between hardware and simulation
+- Comprehensive testing framework
+
+## Upcoming Features
+
+### Voice Recognition
+- Offline speech recognition for basic commands
+- Name recognition and response
+- Voice-based interactions
+
+### Vision Processing
+- Basic object recognition using a camera
+- Face detection for human interaction
+- Color and motion tracking
+
+### Extended Behaviors
+- More complex play behaviors
+- Trick learning and performance
+- Schedule awareness (day/night cycles)
+- Improved human interaction patterns
+
+### Multiple Robot Interaction
+- Recognition of other Dewwy robots
+- Social behaviors between robots
+- Synchronized activities
+
+### Customization Interface
+- Web-based dashboard for personality adjustment
+- Upload custom expressions and behaviors
+- Activity and interaction logs
+
+### Physical Enhancements
+- 3D printable chassis designs
+- Additional sensor support (touch, light, sound)
+- Expansion capabilities for advanced users
