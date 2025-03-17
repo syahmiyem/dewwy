@@ -3,6 +3,10 @@ pyserial>=3.5
 pillow>=8.0.0
 numpy>=1.19.0
 
+# GUI Framework - Use one of these (comment out others)
+# pygame>=2.1.0  # Can be tricky to install on macOS
+arcade>=2.6.0    # Better macOS Silicon support
+
 # For OLED display (uncomment when using real hardware)
 # luma.oled>=3.8.0
 # luma.core>=2.3.0

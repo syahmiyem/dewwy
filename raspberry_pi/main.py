@@ -3,7 +3,6 @@ import signal
 import sys
 import os
 import threading
-import tkinter as tk
 import argparse
 
 # Add project root to Python path for proper importing
@@ -16,7 +15,10 @@ from raspberry_pi.behavior.state_machine import RobotStateMachine, RobotState
 from raspberry_pi.behavior.robot_personality import RobotPersonality, Emotion
 from simulation.virtual_sensors import UltrasonicSensor
 from simulation.virtual_motors import MotorController
-from simulation.robot_simulator import RobotSimulator
+
+# Import simulator - now using Arcade instead of PyGame
+from simulation.arcade_simulator import ArcadeSimulator
+import arcade
 
 class PetRobot:
     def __init__(self, simulation_mode=True, gui_mode=True):
@@ -25,28 +27,22 @@ class PetRobot:
         self.gui_mode = gui_mode
         self.running = True
         
+        # Initialize components
+        self.display = OLEDDisplay(simulation=simulation_mode)
+        self.display.set_status("Starting up...")
+        
         # Initialize GUI if requested
-        self.root = None
         self.simulator = None
-        if gui_mode:
-            self.root = tk.Tk()
-            self.root.title("Dewwy - Pet Robot Simulation")
-            self.root.geometry("850x700")  # Set window size
-            self.root.protocol("WM_DELETE_WINDOW", self.shutdown)
-            
-            print("Creating simulator interface...")
-            # Create simulator with GUI
-            self.simulator = RobotSimulator(self.root)
+        if gui_mode and simulation_mode:
+            print("Creating Arcade simulator interface...")
+            # Create simulator with Arcade
+            self.simulator = ArcadeSimulator()
             self.sensor = self.simulator.sensor
             self.motors = self.simulator.motors
         else:
             # No GUI - use simple simulated components
             self.sensor = UltrasonicSensor()
             self.motors = MotorController()
-        
-        # Initialize components
-        self.display = OLEDDisplay(simulation=simulation_mode)
-        self.display.set_status("Starting up...")
         
         # Initialize communication if not in pure simulation mode
         if not simulation_mode:
@@ -111,15 +107,18 @@ class PetRobot:
         self.display.set_emotion(Emotion.HAPPY)
         
         # Start in a separate thread if using GUI
-        if self.gui_mode:
-            print("Starting in GUI mode - launching window...")
+        if self.gui_mode and self.simulation_mode:
+            print("Starting in GUI mode with Arcade simulation...")
             self.main_thread = threading.Thread(target=self._main_loop)
             self.main_thread.daemon = True
             self.main_thread.start()
             
-            # Start the GUI main loop (this blocks until window is closed)
-            print("Starting Tkinter mainloop...")
-            self.root.mainloop()
+            # Run the Arcade simulator main loop (this blocks until window is closed)
+            print("Starting Arcade simulator...")
+            arcade.run()
+            
+            # When simulator closes, shut down the system
+            self.shutdown()
         else:
             # Run directly in this thread
             self._main_loop()
@@ -143,7 +142,7 @@ class PetRobot:
                 print(f"State: {state}, Emotion: {emotion}, Distance: {distance:.1f}cm")
                 
                 # Update the simulator UI if using GUI
-                if self.gui_mode and self.simulator:
+                if self.gui_mode and self.simulation_mode and self.simulator:
                     self.simulator.set_state_and_emotion(state, emotion)
                 
                 # Calculate sleep time to maintain consistent update rate
@@ -156,7 +155,7 @@ class PetRobot:
             import traceback
             traceback.print_exc()
         finally:
-            # Clean shutdown
+            # Clean shutdown if not in GUI mode
             if not self.gui_mode:
                 self.shutdown()
     
@@ -180,18 +179,15 @@ class PetRobot:
         if hasattr(self, 'serial') and self.serial:
             self.serial.disconnect()
         
-        # Stop GUI if active
-        if self.gui_mode and self.root:
+        # Close simulator if it exists
+        if hasattr(self, 'simulator') and self.simulator:
             try:
-                self.root.quit()
+                arcade.close_window()
             except Exception as e:
-                print(f"Error closing GUI: {e}")
+                print(f"Error closing simulator: {e}")
         
-        # Don't call sys.exit directly - it can cause issues in Tkinter
-        # Instead, schedule the exit to happen after Tkinter has cleaned up
-        if self.gui_mode and self.root:
-            self.root.after(100, lambda: os._exit(0))
-        else:
+        # Exit after a short delay to allow cleanup
+        if not self.gui_mode:
             sys.exit(0)
 
 if __name__ == "__main__":
