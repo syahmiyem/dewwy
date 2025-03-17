@@ -10,6 +10,15 @@ import queue
 # Add project root to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Import components
+from simulation.arcade_components import (
+    EmotionDisplay, 
+    Dashboard, 
+    SerialMonitor, 
+    UltrasonicSensor, 
+    MotorController
+)
+
 class ArcadeSimulator(arcade.Window):
     """Robot simulator using the Arcade library"""
     
@@ -38,22 +47,22 @@ class ArcadeSimulator(arcade.Window):
         
         # Status information
         self.current_state = "Initializing"
-        self.current_emotion = "Neutral"
+        self.current_emotion = "neutral"
         
         # Interface controls
         self.autopilot = True
         self.keys_pressed = set()
         
-        # Create sensor and motors
-        self.sensor = self.create_sensor()
-        self.motors = self.create_motors()
+        # Initialize components
+        self.emotion_display = EmotionDisplay()
+        self.dashboard = Dashboard()
+        self.serial_monitor = SerialMonitor()
         
-        # Serial communication
-        self.rx_messages = []
-        self.tx_messages = []
-        self.max_messages = 10
-        self.rx_bytes = 0
-        self.tx_bytes = 0
+        # Create sensor and motors using the component versions
+        self.sensor = UltrasonicSensor(self)
+        self.motors = MotorController(self)
+        
+        # Serial communication state
         self.serial_active = False
         self.last_serial_activity = time.time()
         
@@ -80,48 +89,6 @@ class ArcadeSimulator(arcade.Window):
         self.worker_thread.start()
         
         print("Arcade simulator initialized successfully")
-    
-    def create_sensor(self):
-        """Create an ultrasonic sensor object"""
-        class ArcadeUltrasonicSensor:
-            def __init__(self, simulator):
-                self.simulator = simulator
-                
-            def measure_distance(self):
-                return self.simulator.calculate_distance()
-        
-        return ArcadeUltrasonicSensor(self)
-    
-    def create_motors(self):
-        """Create a motor controller object"""
-        class ArcadeMotorController:
-            def __init__(self, simulator):
-                self.simulator = simulator
-                self.speed = 0.0
-                self.direction = 0.0
-            
-            def move_forward(self, speed=1.0):
-                speed_px = min(speed * 5, 5)  # Limit speed
-                self.simulator.robot_x += math.cos(self.simulator.robot_direction) * speed_px
-                self.simulator.robot_y += math.sin(self.simulator.robot_direction) * speed_px
-                
-            def move_backward(self, speed=1.0):
-                speed_px = min(speed * 5, 5)  # Limit speed
-                self.simulator.robot_x -= math.cos(self.simulator.robot_direction) * speed_px
-                self.simulator.robot_y -= math.sin(self.simulator.robot_direction) * speed_px
-            
-            def turn_left(self, speed=1.0):
-                turn_amount = min(speed * 0.1, 0.1)  # Limit turn rate
-                self.simulator.robot_direction -= turn_amount
-                
-            def turn_right(self, speed=1.0):
-                turn_amount = min(speed * 0.1, 0.1)  # Limit turn rate
-                self.simulator.robot_direction += turn_amount
-            
-            def stop(self):
-                pass
-        
-        return ArcadeMotorController(self)
     
     def calculate_distance(self):
         """Calculate distance to nearest obstacle"""
@@ -240,28 +207,17 @@ class ArcadeSimulator(arcade.Window):
         # Memory usage
         self.component_status["memory_used"] = min(100, max(0, 
             self.component_status["memory_used"] + random.uniform(-0.5, 0.5)))
+        
+        # Update dashboard with latest metrics
+        self.dashboard.update_status(self.component_status)
+        self.dashboard.set_serial_active(self.serial_active)
     
     def add_serial_message(self, message, direction="rx"):
         """Add a message to either RX or TX history"""
-        timestamp = time.strftime("%H:%M:%S")
+        # Add to the serial monitor component instead of internal lists
+        self.serial_monitor.add_message(message, direction)
         
-        if direction == "rx":
-            self.rx_messages.append({
-                "timestamp": timestamp,
-                "content": message
-            })
-            self.rx_bytes += len(message)
-            while len(self.rx_messages) > self.max_messages:
-                self.rx_messages.pop(0)
-        else:
-            self.tx_messages.append({
-                "timestamp": timestamp,
-                "content": message
-            })
-            self.tx_bytes += len(message)
-            while len(self.tx_messages) > self.max_messages:
-                self.tx_messages.pop(0)
-        
+        # Update serial activity status
         self.serial_active = True
         self.last_serial_activity = time.time()
     
@@ -299,6 +255,9 @@ class ArcadeSimulator(arcade.Window):
             arcade.color.BLUE,
             3
         )
+        
+        # Draw emotion display using the component
+        self.emotion_display.draw(self.robot_x, self.robot_y, self.current_emotion)
         
         # Draw direction indicator
         end_x = self.robot_x + math.cos(self.robot_direction) * self.robot_radius
@@ -344,129 +303,13 @@ class ArcadeSimulator(arcade.Window):
             16
         )
         
-        # Draw dashboard if enabled
+        # Draw dashboard if enabled using the component
         if self.show_dashboard:
-            self._draw_simple_dashboard()
+            self.dashboard.draw(120, 120)
         
-        # Draw serial monitor if enabled
+        # Draw serial monitor if enabled using the component
         if self.show_serial_monitor:
-            self._draw_simple_serial_monitor()
-    
-    def _draw_simple_dashboard(self):
-        """Draw a simplified dashboard with system status"""
-        # Background panel
-        arcade.draw_rectangle_filled(
-            120, 120, 220, 220,
-            (0, 0, 0, 150)  # Semi-transparent black
-        )
-        
-        # Battery level
-        battery = self.component_status["battery"]
-        battery_color = arcade.color.GREEN
-        if battery < 30:
-            battery_color = arcade.color.RED
-        elif battery < 60:
-            battery_color = arcade.color.YELLOW
-            
-        arcade.draw_text(
-            f"Battery: {battery:.0f}%",
-            30, 200,
-            battery_color,
-            14
-        )
-        
-        # CPU usage
-        arcade.draw_text(
-            f"CPU: {self.component_status['cpu_usage']:.0f}%",
-            30, 170,
-            arcade.color.WHITE,
-            14
-        )
-        
-        # Temperature
-        arcade.draw_text(
-            f"Temp: {self.component_status['temperature']:.1f}°C",
-            30, 140,
-            arcade.color.WHITE,
-            14
-        )
-        
-        # Serial status
-        serial_status = "ACTIVE" if self.serial_active else "IDLE"
-        arcade.draw_text(
-            f"Serial: {serial_status}",
-            30, 110,
-            arcade.color.GREEN if self.serial_active else arcade.color.GRAY,
-            14
-        )
-        
-        # Memory use
-        arcade.draw_text(
-            f"Mem: {self.component_status['memory_used']:.0f}%",
-            30, 80,
-            arcade.color.WHITE,
-            14
-        )
-    
-    def _draw_simple_serial_monitor(self):
-        """Draw a simplified serial monitor"""
-        # Background panel
-        arcade.draw_rectangle_filled(
-            self.width - 150, 250, 280, 300,
-            (0, 0, 0, 150)  # Semi-transparent black
-        )
-        
-        # Title
-        arcade.draw_text(
-            "SERIAL MONITOR",
-            self.width - 280, 380,
-            arcade.color.WHITE,
-            16
-        )
-        
-        # Recent RX messages
-        y_pos = 350
-        arcade.draw_text(
-            "RX Messages:",
-            self.width - 280, y_pos,
-            arcade.color.GREEN,
-            12
-        )
-        y_pos -= 20
-        
-        for i, msg in enumerate(reversed(self.rx_messages[:5])):
-            arcade.draw_text(
-                f"{msg['timestamp']}: {msg['content'][:20]}",
-                self.width - 280, y_pos - (i * 20),
-                arcade.color.WHITE,
-                10
-            )
-        
-        # Recent TX messages
-        y_pos = 230
-        arcade.draw_text(
-            "TX Messages:",
-            self.width - 280, y_pos,
-            arcade.color.ORANGE,
-            12
-        )
-        y_pos -= 20
-        
-        for i, msg in enumerate(reversed(self.tx_messages[:5])):
-            arcade.draw_text(
-                f"{msg['timestamp']}: {msg['content'][:20]}",
-                self.width - 280, y_pos - (i * 20),
-                arcade.color.WHITE,
-                10
-            )
-        
-        # Byte counts
-        arcade.draw_text(
-            f"RX: {self.rx_bytes} bytes  TX: {self.tx_bytes} bytes",
-            self.width - 280, 120,
-            arcade.color.WHITE,
-            10
-        )
+            self.serial_monitor.draw(self.width - 150, 250)
     
     def on_update(self, delta_time):
         """Update simulation state - keep this light and fast"""
@@ -498,11 +341,14 @@ class ArcadeSimulator(arcade.Window):
         # Autopilot control (only if enabled)
         if self.autopilot:
             if distance < 50:
-                # Obstacle detected - turn to avoid
-                if random.choice([True, False]):
-                    self.motors.turn_left(0.2)
+                # Obstacle detected - immediately turn in random direction (Roomba style)
+                turning_direction = random.choice([True, False])  # True = left, False = right
+                if turning_direction:
+                    self.motors.turn_left(0.5)  # Increased turn speed for faster response
+                    self.add_serial_message("LFT (Auto)", "tx")
                 else:
-                    self.motors.turn_right(0.2)
+                    self.motors.turn_right(0.5)  # Increased turn speed for faster response
+                    self.add_serial_message("RGT (Auto)", "tx")
                 self.current_state = "Avoiding"
             else:
                 # Occasionally change direction during roaming
@@ -554,8 +400,10 @@ class ArcadeSimulator(arcade.Window):
         elif key == arcade.key.D:
             # Toggle dashboard
             self.show_dashboard = not self.show_dashboard
-        elif key == arcade.key.Q:
-            arcade.close_window()
+        elif key == arcade.key.Q or key == arcade.key.ESCAPE:
+            print("Exit key pressed - closing window")
+            self.close()
+            arcade.exit()
     
     def on_key_release(self, key, modifiers):
         """Handle key releases"""
@@ -565,7 +413,7 @@ class ArcadeSimulator(arcade.Window):
     def set_state_and_emotion(self, state, emotion):
         """Update the state and emotion display"""
         self.current_state = state
-        self.current_emotion = emotion
+        self.current_emotion = emotion.lower() if emotion else "neutral"
     
     def close(self):
         """Clean shutdown"""
