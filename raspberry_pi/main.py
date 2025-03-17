@@ -5,6 +5,7 @@ import os
 import threading
 import argparse
 import atexit
+import random
 
 # Add project root to Python path for proper importing
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -52,8 +53,13 @@ class PetRobot:
             self.sensor = self._create_sensor_interface(self.serial)
             self.motors = self._create_motor_interface(self.serial)
         
-        # Initialize personality and state machine
+        # Initialize personality with unique traits
         self.personality = RobotPersonality(display=self.display)
+        
+        # Randomize personality traits to create a unique pet character
+        self._randomize_personality_traits()
+        
+        # Initialize state machine with references to personality and components
         self.state_machine = RobotStateMachine(self.sensor, self.motors, self.personality)
         
         # Setup signal handlers for clean shutdown
@@ -63,6 +69,14 @@ class PetRobot:
         
         # Main thread control
         self.main_thread = None
+        
+        # Pet-specific variables
+        self.last_random_behavior = time.time()
+        self.random_behavior_interval = random.uniform(20, 60)  # Seconds between random behaviors
+        
+        # Show startup emotions
+        self.personality.set_emotion(Emotion.EXCITED)
+        print(f"Pet robot initialized with personality: {self._get_personality_description()}")
     
     def _create_sensor_interface(self, serial):
         """Create a sensor interface that works through serial connection"""
@@ -102,6 +116,84 @@ class PetRobot:
                 
         return SerialMotorController(serial)
     
+    def _randomize_personality_traits(self):
+        """Create a unique pet personality with randomized traits"""
+        # Create a unique personality for each run
+        self.personality.traits["openness"] = random.randint(3, 10)
+        self.personality.traits["friendliness"] = random.randint(5, 10)
+        self.personality.traits["activeness"] = random.randint(3, 10)
+        self.personality.traits["expressiveness"] = random.randint(4, 10)
+        self.personality.traits["patience"] = random.randint(2, 10)
+    
+    def _get_personality_description(self):
+        """Get a text description of the robot's personality"""
+        traits = self.personality.traits
+        description = []
+        
+        # Friendliness description
+        if traits["friendliness"] > 8:
+            description.append("very friendly")
+        elif traits["friendliness"] > 5:
+            description.append("generally friendly")
+        else:
+            description.append("somewhat reserved")
+            
+        # Activeness description
+        if traits["activeness"] > 8:
+            description.append("highly energetic")
+        elif traits["activeness"] > 5:
+            description.append("moderately active")
+        else:
+            description.append("relatively calm")
+            
+        # Expressiveness description
+        if traits["expressiveness"] > 7:
+            description.append("very expressive")
+        else:
+            description.append("subtly expressive")
+        
+        return ", ".join(description)
+    
+    def _check_for_random_behaviors(self):
+        """Occasionally trigger random pet-like behaviors"""
+        current_time = time.time()
+        
+        # Check if it's time for a random behavior
+        if current_time - self.last_random_behavior > self.random_behavior_interval:
+            self.last_random_behavior = current_time
+            self.random_behavior_interval = random.uniform(15, 60)  # Vary time between behaviors
+            
+            # Choose a random behavior
+            behavior = random.choice([
+                "play_behavior",
+                "curious_behavior",
+                "sleep_behavior",
+                "attention_seeking"
+            ])
+            
+            # Execute the behavior
+            if behavior == "play_behavior" and random.random() < self.personality.traits["activeness"] / 10:
+                print("Pet robot feels playful!")
+                self.state_machine.transition_to(RobotState.PLAYING)
+            
+            elif behavior == "curious_behavior" and random.random() < self.personality.traits["openness"] / 10:
+                print("Pet robot is curious about something!")
+                self.state_machine.transition_to(RobotState.CURIOUS)
+            
+            elif behavior == "sleep_behavior" and random.random() < (10 - self.personality.traits["activeness"]) / 10:
+                print("Pet robot is feeling sleepy!")
+                self.state_machine.transition_to(RobotState.SLEEPING)
+            
+            elif behavior == "attention_seeking" and random.random() < self.personality.traits["expressiveness"] / 10:
+                print("Pet robot wants attention!")
+                # Make a small noise or movement to get attention
+                self.personality.set_emotion(random.choice([Emotion.EXCITED, Emotion.HAPPY]))
+                # Move back and forth a bit
+                if hasattr(self.state_machine, "current_state") and self.state_machine.current_state == RobotState.IDLE:
+                    self.motors.move_forward(0.3)
+                    time.sleep(0.2)
+                    self.motors.stop()
+    
     def start(self):
         """Start the robot's main loop"""
         print("Starting pet robot...")
@@ -135,9 +227,16 @@ class PetRobot:
             while self.running:
                 start_time = time.time()
                 
+                # Update the personality (random emotion changes, etc.)
+                if hasattr(self, 'personality'):
+                    self.personality.update()
+                
                 # Update the state machine
                 if hasattr(self, 'state_machine'):
                     self.state_machine.update()
+                
+                # Check for random pet-like behaviors
+                self._check_for_random_behaviors()
                 
                 # Get current state
                 if hasattr(self, 'state_machine') and hasattr(self, 'personality'):
@@ -145,7 +244,9 @@ class PetRobot:
                     emotion = self.personality.get_emotion()
                     distance = self.sensor.measure_distance()
                     
-                    print(f"State: {state}, Emotion: {emotion}, Distance: {distance:.1f}cm")
+                    # Log status every few updates
+                    if random.random() < 0.05:  # ~5% chance each update
+                        print(f"State: {state}, Emotion: {emotion}, Distance: {distance:.1f}cm")
                     
                     # Update the simulator if it exists
                     if self.simulator_instance:
@@ -177,6 +278,10 @@ class PetRobot:
         print("Shutting down pet robot...")
         self.running = False
         
+        # Set final emotion
+        if hasattr(self, 'personality'):
+            self.personality.set_emotion(Emotion.SAD)
+        
         # Stop components - add safety checks
         if hasattr(self, 'display') and self.display:
             try:
@@ -191,7 +296,7 @@ class PetRobot:
                 print(f"Error disconnecting serial: {e}")
         
         # Force exit the process
-        print("Exiting...")
+        print("Goodbye!")
         os._exit(0)
 
 if __name__ == "__main__":

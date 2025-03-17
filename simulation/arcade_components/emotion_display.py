@@ -18,7 +18,9 @@ class EmotionDisplay:
             "excited": self._create_excited_face,
             "sleepy": self._create_sleepy_face,
             "curious": self._create_curious_face,
-            "scared": self._create_scared_face
+            "scared": self._create_scared_face,
+            "playful": self._create_playful_face,
+            "grumpy": self._create_grumpy_face
         }
     
     def draw(self, x, y, emotion):
@@ -307,6 +309,103 @@ class EmotionDisplay:
         arcade.draw_ellipse_outline(
             center_x, mouth_y,
             mouth_width, mouth_height,
+            arcade.color.WHITE,
+            3
+        )
+    
+    def _create_playful_face(self, x, y, width, height):
+        """Draw a playful face on the display"""
+        center_x = x + width/2
+        center_y = y + height/2
+        face_size = min(width, height) * 0.8
+        
+        # Draw winking eye (one open, one closed)
+        eye_y = center_y + face_size * 0.1
+        left_eye_x = center_x - face_size * 0.2
+        right_eye_x = center_x + face_size * 0.2
+        eye_size = face_size * 0.12
+        
+        # Open eye
+        arcade.draw_circle_filled(left_eye_x, eye_y, eye_size, arcade.color.WHITE)
+        
+        # Wink (horizontal line)
+        arcade.draw_line(
+            right_eye_x - eye_size, eye_y,
+            right_eye_x + eye_size, eye_y,
+            arcade.color.WHITE,
+            2
+        )
+        
+        # Big smile
+        smile_y = center_y - face_size * 0.1
+        smile_width = face_size * 0.6
+        smile_height = face_size * 0.35
+        
+        # Draw the smile as an arc
+        arcade.draw_arc_outline(
+            center_x, smile_y,
+            smile_width, smile_height,
+            arcade.color.WHITE,
+            0, 180,
+            3
+        )
+        
+        # Tongue sticking out
+        tongue_width = smile_width * 0.2
+        tongue_height = smile_height * 0.5
+        arcade.draw_ellipse_filled(
+            center_x, smile_y - smile_height * 0.2,
+            tongue_width, tongue_height,
+            arcade.color.WHITE
+        )
+    
+    def _create_grumpy_face(self, x, y, width, height):
+        """Draw a grumpy face on the display"""
+        center_x = x + width/2
+        center_y = y + height/2
+        face_size = min(width, height) * 0.8
+        
+        # Draw squinted eyes with furrowed brows
+        eye_y = center_y + face_size * 0.1
+        left_eye_x = center_x - face_size * 0.2
+        right_eye_x = center_x + face_size * 0.2
+        eye_width = face_size * 0.15
+        
+        # Left eye and eyebrow
+        arcade.draw_line(
+            left_eye_x - eye_width/2, eye_y,
+            left_eye_x + eye_width/2, eye_y,
+            arcade.color.WHITE,
+            2
+        )
+        arcade.draw_line(
+            left_eye_x - eye_width/2, eye_y + face_size * 0.06,
+            left_eye_x + eye_width/2, eye_y + face_size * 0.02,
+            arcade.color.WHITE,
+            2
+        )
+        
+        # Right eye and eyebrow
+        arcade.draw_line(
+            right_eye_x - eye_width/2, eye_y,
+            right_eye_x + eye_width/2, eye_y,
+            arcade.color.WHITE,
+            2
+        )
+        arcade.draw_line(
+            right_eye_x - eye_width/2, eye_y + face_size * 0.02,
+            right_eye_x + eye_width/2, eye_y + face_size * 0.06,
+            arcade.color.WHITE,
+            2
+        )
+        
+        # Draw frown
+        mouth_y = center_y - face_size * 0.15
+        mouth_width = face_size * 0.4
+        
+        arcade.draw_line(
+            center_x - mouth_width/2, mouth_y,
+            center_x + mouth_width/2, mouth_y - face_size * 0.05,
             arcade.color.WHITE,
             3
         )
