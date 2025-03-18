@@ -18,6 +18,25 @@ from raspberry_pi.behavior.robot_personality import RobotPersonality, Emotion
 from simulation.virtual_sensors import UltrasonicSensor
 from simulation.virtual_motors import MotorController
 
+# Try to import audio components, with fallback options
+try:
+    from raspberry_pi.audio.microphone_interface import MicrophoneInterface
+    from raspberry_pi.audio.voice_recognition import VoiceRecognizer
+    from raspberry_pi.audio.command_processor import CommandProcessor
+    audio_modules_available = True
+    print("Audio modules imported successfully")
+except ImportError as e:
+    print(f"Warning: Could not import audio modules: {e}")
+    print("Falling back to simplified audio simulation")
+    try:
+        from raspberry_pi.audio.fallback_recognition import SimpleMicrophoneInterface as MicrophoneInterface
+        from raspberry_pi.audio.fallback_recognition import SimpleVoiceRecognizer as VoiceRecognizer
+        from raspberry_pi.audio.command_processor import CommandProcessor
+        audio_modules_available = False
+    except ImportError:
+        print("Could not import fallback audio modules either")
+        audio_modules_available = False
+
 # Import only the Arcade simulator
 from simulation.arcade_simulator import ArcadeSimulator
 import arcade
@@ -61,6 +80,21 @@ class PetRobot:
         
         # Initialize state machine with references to personality and components
         self.state_machine = RobotStateMachine(self.sensor, self.motors, self.personality)
+        
+        # Initialize audio and voice recognition components
+        if audio_modules_available:
+            self.microphone = MicrophoneInterface(simulation=simulation_mode)
+            self.voice_recognizer = VoiceRecognizer(microphone=self.microphone, simulation=simulation_mode)
+            self.command_processor = CommandProcessor(
+                voice_recognizer=self.voice_recognizer,
+                state_machine=self.state_machine,
+                personality=self.personality
+            )
+        else:
+            print("Voice recognition disabled - required modules not available")
+            self.microphone = None
+            self.voice_recognizer = None
+            self.command_processor = None
         
         # Setup signal handlers for clean shutdown
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -200,6 +234,12 @@ class PetRobot:
         self.display.set_status("Running")
         self.display.set_emotion(Emotion.HAPPY)
         
+        # Start audio and voice recognition
+        if audio_modules_available and self.microphone and self.voice_recognizer and self.command_processor:
+            self.microphone.start_listening()
+            self.voice_recognizer.start()
+            self.command_processor.start()
+        
         # Start in a separate thread if using GUI
         if self.gui_mode and self.simulation_mode:
             print("Starting in GUI mode with Arcade simulation...")
@@ -288,6 +328,25 @@ class PetRobot:
                 self.display.shutdown()
             except Exception as e:
                 print(f"Error shutting down display: {e}")
+        
+        # Stop audio components
+        if audio_modules_available and hasattr(self, 'command_processor') and self.command_processor:
+            try:
+                self.command_processor.stop()
+            except Exception as e:
+                print(f"Error stopping command processor: {e}")
+                
+        if audio_modules_available and hasattr(self, 'voice_recognizer') and self.voice_recognizer:
+            try:
+                self.voice_recognizer.stop()
+            except Exception as e:
+                print(f"Error stopping voice recognizer: {e}")
+                
+        if audio_modules_available and hasattr(self, 'microphone') and self.microphone:
+            try:
+                self.microphone.shutdown()
+            except Exception as e:
+                print(f"Error shutting down microphone: {e}")
                 
         if hasattr(self, 'serial') and self.serial:
             try:
