@@ -14,12 +14,28 @@ import signal
 # Add project root to Python path for proper importing
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from raspberry_pi.audio.microphone_interface import MicrophoneInterface
-from raspberry_pi.audio.voice_recognition import VoiceRecognizer
+# Try to import the microphone interface first
+try:
+    from raspberry_pi.audio.microphone_interface import MicrophoneInterface
+except ImportError:
+    # Fall back to simple implementation
+    try:
+        from raspberry_pi.audio.fallback_recognition import SimpleMicrophoneInterface as MicrophoneInterface
+    except ImportError:
+        print("Error: Could not import microphone interface modules")
+        sys.exit(1)
+
+# Then import the voice recognizer
+try:
+    from raspberry_pi.audio.voice_recognition import VoiceRecognizer
+except ImportError:
+    print("Error: Could not import voice recognition module")
+    sys.exit(1)
 
 class VoiceRecognitionTester:
-    def __init__(self, simulation=True):
+    def __init__(self, simulation=True, force_simple_mode=False):
         self.simulation = simulation
+        self.force_simple_mode = force_simple_mode
         self.running = True
         
         # Setup signal handlers
@@ -32,7 +48,8 @@ class VoiceRecognitionTester:
         self.microphone = MicrophoneInterface(simulation=simulation)
         self.voice_recognizer = VoiceRecognizer(
             microphone=self.microphone, 
-            simulation=simulation
+            simulation=simulation,
+            force_simple_mode=force_simple_mode
         )
     
     def start(self):
@@ -47,6 +64,8 @@ class VoiceRecognitionTester:
         print("Say the wake word 'Dewwy' followed by a command.")
         if self.simulation:
             print("SIMULATION MODE: Commands are randomly generated.")
+        if self.force_simple_mode:
+            print("SIMPLE MODE: Using simplified voice recognition (no advanced features).")
         print("Press Ctrl+C to exit.")
         print("==============================\n")
         
@@ -94,7 +113,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Test voice recognition system")
     parser.add_argument("--real-hardware", action="store_true", 
                         help="Use real hardware instead of simulation")
+    parser.add_argument("--simple", action="store_true",
+                        help="Force simple mode even if advanced modules are available")
     args = parser.parse_args()
     
-    tester = VoiceRecognitionTester(simulation=not args.real_hardware)
+    if args.simple:
+        print("Forcing simple mode")
+    
+    tester = VoiceRecognitionTester(
+        simulation=not args.real_hardware,
+        force_simple_mode=args.simple
+    )
     tester.start()

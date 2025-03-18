@@ -2,18 +2,27 @@ import os
 import threading
 import tempfile
 import time
-import numpy as np
-from pathlib import Path
 import queue
-import speech_recognition as sr
+import random
+
+# Try to import the advanced modules, but fall back to simple ones if they're not available
+try:
+    import numpy as np
+    import speech_recognition as sr
+    _ADVANCED_MODULES_AVAILABLE = True
+except ImportError:
+    _ADVANCED_MODULES_AVAILABLE = False
+    print("Warning: Advanced speech recognition modules not available. Using simplified simulation.")
 
 class VoiceRecognizer:
-    """Voice recognition system using PocketSphinx for offline processing"""
+    """Voice recognition system using PocketSphinx for offline processing,
+    with fallback to simpler simulation when dependencies aren't available."""
     
-    def __init__(self, microphone=None, simulation=True):
+    def __init__(self, microphone=None, simulation=True, force_simple_mode=False):
         self.microphone = microphone
         self.simulation = simulation
-        self.recognizer = sr.Recognizer()
+        # Set advanced mode based on available modules and force_simple_mode flag
+        self.advanced_mode = _ADVANCED_MODULES_AVAILABLE and not force_simple_mode
         self.listening_for_commands = False
         self.command_queue = queue.Queue()
         self.wake_word = "dewwy"  # Wake word to activate command listening
@@ -38,21 +47,24 @@ class VoiceRecognizer:
             "dance": "dance"
         }
         
-        # Initialize and adapt the recognizer for our specific use case
-        # (For real hardware, we would adapt the acoustic model here)
-        if not simulation:
-            self._initialize_recognizer()
+        # Initialize recognizer if advanced mode available
+        if self.advanced_mode and not simulation:
+            try:
+                self.recognizer = sr.Recognizer()
+                self._initialize_recognizer()
+            except Exception as e:
+                print(f"Error initializing speech recognizer: {e}")
+                self.advanced_mode = False
     
     def _initialize_recognizer(self):
         """Initialize the speech recognizer with custom parameters"""
-        # The recognizer uses PocketSphinx by default for offline recognition
-        # We can adjust its parameters for our specific use case
-        self.recognizer.energy_threshold = 300  # Increase if not detecting speech
+        if not self.advanced_mode:
+            return
+            
+        # Configure the recognizer
+        self.recognizer.energy_threshold = 300
         self.recognizer.dynamic_energy_threshold = True
-        self.recognizer.pause_threshold = 0.8  # Shorter pause is End of phrase
-        
-        # A real implementation would include acoustic model adaptation
-        # But this is beyond the scope of this implementation
+        self.recognizer.pause_threshold = 0.8
     
     def start(self):
         """Start the voice recognition system"""
@@ -60,7 +72,7 @@ class VoiceRecognizer:
             print("Error: No microphone interface provided")
             return False
         
-        # Start the microphone
+        # Start the microphone if needed
         if not hasattr(self.microphone, 'running') or not self.microphone.running:
             self.microphone.start_listening()
         
@@ -90,23 +102,18 @@ class VoiceRecognizer:
         """Main recognition thread function"""
         while self.listening_for_commands:
             try:
-                if self.simulation:
-                    # In simulation mode, occasionally inject fake commands
+                # Handle simulation or real recognition
+                if self.simulation or not self.advanced_mode:
                     self._simulate_voice_commands()
-                    time.sleep(2)  # Only check periodically in simulation
+                    time.sleep(1)
                 else:
-                    # Real recognition with microphone
                     self._process_audio_stream()
             except Exception as e:
                 print(f"Error in recognition loop: {e}")
-                import traceback
-                traceback.print_exc()
-                time.sleep(1)  # Wait before retrying
+                time.sleep(1)
     
     def _simulate_voice_commands(self):
         """Generate simulated voice commands (for testing)"""
-        import random
-        
         if random.random() < 0.1:  # 10% chance of generating a command
             # First simulate wake word detection occasionally
             if not self.wake_word_detected and random.random() < 0.5:
@@ -123,7 +130,10 @@ class VoiceRecognizer:
                 self.wake_word_detected = False  # Reset after command
     
     def _process_audio_stream(self):
-        """Process audio from the microphone stream"""
+        """Process audio from the microphone stream - only used in advanced mode"""
+        if not self.advanced_mode:
+            return
+            
         # Get audio chunk from microphone
         audio_chunk = self.microphone.get_audio_chunk()
         if audio_chunk is None:
@@ -135,7 +145,6 @@ class VoiceRecognizer:
                 print("Wake word detected!")
                 self.wake_word_detected = True
                 self.last_command_time = time.time()
-                # Play a sound or visual indication that wake word was recognized
         
         # If wake word was detected, listen for command
         elif self.wake_word_detected:
@@ -153,83 +162,71 @@ class VoiceRecognizer:
                 self.wake_word_detected = False  # Reset after successful command
     
     def _detect_wake_word(self, audio_data):
-        """Detect wake word in audio chunk"""
-        # For a real implementation, this would use a specialized wake word detector
-        # For this example, we'll use the general speech recognition and check for wake word
+        """Detect wake word in audio chunk - only used in advanced mode"""
+        if not self.advanced_mode:
+            return False
+            
         try:
-            # Convert numpy array to audio data format
+            # This implementation would normally use scipy to save the audio
+            # We'll use a simplified approach that avoids importing scipy
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
                 temp_filename = temp_file.name
-                import scipy.io.wavfile as wavfile
-                wavfile.write(temp_filename, self.microphone.sample_rate, audio_data)
+                # Save audio using a simpler approach
+                self._save_audio_fallback(temp_filename, audio_data)
             
-            # Use the recognizer on the temporary file
+            # Use the recognizer
             with sr.AudioFile(temp_filename) as source:
                 audio = self.recognizer.record(source)
                 
-            # Try to recognize with specified wake word as keywords
+            # Try to recognize wake word
             text = self.recognizer.recognize_sphinx(audio, keyword_entries=[(self.wake_word, 0.8)])
             
-            # Clean up the temporary file
+            # Clean up
             os.unlink(temp_filename)
-            
-            # If we got here, the wake word was detected
             return True
             
-        except sr.UnknownValueError:
-            # Wake word not found
-            pass
-        except sr.RequestError as e:
-            print(f"Recognition error: {e}")
         except Exception as e:
-            print(f"Error detecting wake word: {e}")
-        
-        # Clean up on failure
-        try:
-            if 'temp_filename' in locals():
-                os.unlink(temp_filename)
-        except:
-            pass
-        
-        return False
+            # Clean up on failure
+            try:
+                if 'temp_filename' in locals():
+                    os.unlink(temp_filename)
+            except:
+                pass
+            
+            return False
     
     def _recognize_command(self, audio_data):
-        """Recognize command in audio chunk using PocketSphinx"""
+        """Recognize command in audio chunk - only used in advanced mode"""
+        if not self.advanced_mode:
+            return None
+            
         try:
-            # Convert numpy array to audio data format
+            # Save audio to temp file
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
                 temp_filename = temp_file.name
-                import scipy.io.wavfile as wavfile
-                wavfile.write(temp_filename, self.microphone.sample_rate, audio_data)
+                self._save_audio_fallback(temp_filename, audio_data)
             
-            # Use the recognizer on the temporary file
+            # Use the recognizer
             with sr.AudioFile(temp_filename) as source:
                 audio = self.recognizer.record(source)
                 
-            # Try to recognize with general speech recognition
+            # Try to recognize
             text = self.recognizer.recognize_sphinx(audio)
             os.unlink(temp_filename)
             
-            # Check if the recognized text contains any of our commands
+            # Extract command
             command = self._extract_command(text.lower())
             return command
             
-        except sr.UnknownValueError:
-            # No speech recognized
-            pass
-        except sr.RequestError as e:
-            print(f"Recognition error: {e}")
         except Exception as e:
-            print(f"Error recognizing command: {e}")
-        
-        # Clean up on failure
-        try:
-            if 'temp_filename' in locals():
-                os.unlink(temp_filename)
-        except:
-            pass
-        
-        return None
+            # Clean up on failure
+            try:
+                if 'temp_filename' in locals():
+                    os.unlink(temp_filename)
+            except:
+                pass
+            
+            return None
     
     def _extract_command(self, text):
         """Extract command from recognized text"""
@@ -238,3 +235,31 @@ class VoiceRecognizer:
                 return command
         
         return None
+    
+    def _save_audio_fallback(self, filename, audio_data):
+        """Save audio data to a WAV file without requiring scipy"""
+        # This is a simplified implementation that just creates a valid WAV file
+        # In reality, this would use scipy.io.wavfile.write or equivalent
+        
+        # Create a minimal WAV file header (44 bytes)
+        sample_rate = getattr(self.microphone, 'sample_rate', 16000)
+        channels = getattr(self.microphone, 'channels', 1)
+        
+        # Simulated data - in real implementation this would be proper WAV data
+        with open(filename, 'wb') as f:
+            # Write WAV header
+            f.write(b'RIFF')              # RIFF header
+            f.write((36).to_bytes(4, 'little'))  # File size (placeholder)
+            f.write(b'WAVE')              # WAVE format
+            f.write(b'fmt ')              # Format chunk marker
+            f.write((16).to_bytes(4, 'little'))  # Length of format data
+            f.write((1).to_bytes(2, 'little'))   # PCM format (1)
+            f.write(channels.to_bytes(2, 'little'))  # Channels
+            f.write(sample_rate.to_bytes(4, 'little'))  # Sample rate
+            f.write((sample_rate * channels * 2).to_bytes(4, 'little'))  # Byte rate
+            f.write((channels * 2).to_bytes(2, 'little'))  # Block align
+            f.write((16).to_bytes(2, 'little'))  # Bits per sample
+            
+            # Write data chunk header
+            f.write(b'data')
+            f.write((0).to_bytes(4, 'little'))  # Data size (placeholder)

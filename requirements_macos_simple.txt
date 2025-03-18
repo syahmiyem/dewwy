@@ -1,0 +1,13 @@
+# Minimal requirements for macOS that avoid compilation issues
+pyserial>=3.5
+pillow>=8.0.0
+numpy>=1.21.6
+arcade>=2.6.0
+pyttsx3>=2.90
+webrtcvad>=2.0.10
+SpeechRecognition>=3.8.1
+
+# Optional packages - comment out if they cause installation problems
+# pyaudio>=0.2.11
+# sounddevice>=0.4.1  
+# pocketsphinx>=0.1.15

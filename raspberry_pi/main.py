@@ -30,9 +30,9 @@ except ImportError as e:
     print("Falling back to simplified audio simulation")
     try:
         from raspberry_pi.audio.fallback_recognition import SimpleMicrophoneInterface as MicrophoneInterface
-        from raspberry_pi.audio.fallback_recognition import SimpleVoiceRecognizer as VoiceRecognizer
+        from raspberry_pi.audio.voice_recognition import VoiceRecognizer
         from raspberry_pi.audio.command_processor import CommandProcessor
-        audio_modules_available = False
+        audio_modules_available = True
     except ImportError:
         print("Could not import fallback audio modules either")
         audio_modules_available = False
@@ -42,7 +42,7 @@ from simulation.arcade_simulator import ArcadeSimulator
 import arcade
 
 class PetRobot:
-    def __init__(self, simulation_mode=True, gui_mode=True):
+    def __init__(self, simulation_mode=True, gui_mode=True, simple_audio=False):
         print("Initializing Pet Robot...")
         self.simulation_mode = simulation_mode
         self.gui_mode = gui_mode
@@ -84,7 +84,11 @@ class PetRobot:
         # Initialize audio and voice recognition components
         if audio_modules_available:
             self.microphone = MicrophoneInterface(simulation=simulation_mode)
-            self.voice_recognizer = VoiceRecognizer(microphone=self.microphone, simulation=simulation_mode)
+            self.voice_recognizer = VoiceRecognizer(
+                microphone=self.microphone, 
+                simulation=simulation_mode,
+                force_simple_mode=simple_audio
+            )
             self.command_processor = CommandProcessor(
                 voice_recognizer=self.voice_recognizer,
                 state_machine=self.state_machine,
@@ -365,9 +369,14 @@ if __name__ == "__main__":
                         help="Connect to real hardware instead of simulation")
     parser.add_argument("--no-gui", action="store_true",
                         help="Run without GUI (console mode)")
+    parser.add_argument("--simple-audio", action="store_true",
+                        help="Use simplified audio processing (no advanced features)")
     args = parser.parse_args()
     
     # Create and start pet robot (globals so atexit can access)
-    robot = PetRobot(simulation_mode=not args.no_simulation, 
-                     gui_mode=not args.no_gui)
+    robot = PetRobot(
+        simulation_mode=not args.no_simulation, 
+        gui_mode=not args.no_gui,
+        simple_audio=args.simple_audio
+    )
     robot.start()
