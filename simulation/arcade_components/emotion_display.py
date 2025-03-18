@@ -72,6 +72,19 @@ class EmotionDisplay:
         self.blink_duration = 0.2  # seconds
         self.blink_start_time = 0
         
+        # Emotion-specific blinking behaviors
+        self.blink_behaviors = {
+            "happy": {"min_interval": 3.0, "max_interval": 6.0, "duration": 0.2},
+            "sad": {"min_interval": 4.0, "max_interval": 7.0, "duration": 0.3},  # Slower, longer blinks
+            "neutral": {"min_interval": 2.0, "max_interval": 5.0, "duration": 0.2},
+            "excited": {"min_interval": 1.5, "max_interval": 4.0, "duration": 0.15},  # Quick, frequent blinks
+            "sleepy": {"min_interval": 0.8, "max_interval": 3.0, "duration": 0.5},  # Very frequent, long blinks
+            "curious": {"min_interval": 1.0, "max_interval": 3.0, "duration": 0.2},  # More frequent when curious
+            "scared": {"min_interval": 5.0, "max_interval": 10.0, "duration": 0.1},  # Rare, quick blinks when scared
+            "playful": {"min_interval": 1.0, "max_interval": 3.0, "duration": 0.2},  # Frequent, playful blinks
+            "grumpy": {"min_interval": 3.0, "max_interval": 8.0, "duration": 0.3}    # Slow, deliberate blinks
+        }
+        
         # Transition animation properties
         self.transitioning = False
         self.transition_start_time = 0
@@ -201,16 +214,26 @@ class EmotionDisplay:
         self._update_blink_state(current_time)
     
     def _update_blink_state(self, current_time):
-        """Update blinking state for natural eye movements"""
+        """Update blinking state for natural eye movements that adapt to emotional state"""
+        # Get current emotion (or default to neutral)
+        current_emotion = self.last_emotion if hasattr(self, 'last_emotion') else "neutral"
+        
+        # Get blink behavior for current emotion
+        blink_behavior = self.blink_behaviors.get(current_emotion, self.blink_behaviors["neutral"])
+        
         if not self.is_blinking and current_time >= self.next_blink_time:
             # Start a blink
             self.is_blinking = True
             self.blink_start_time = current_time
+            # Use emotion-specific blink duration
+            self.blink_duration = blink_behavior["duration"]
         elif self.is_blinking and current_time - self.blink_start_time > self.blink_duration:
             # End the blink
             self.is_blinking = False
-            # Schedule next blink
-            self.next_blink_time = current_time + random.uniform(2, 6)
+            # Schedule next blink using emotion-specific interval
+            min_interval = blink_behavior["min_interval"]
+            max_interval = blink_behavior["max_interval"]
+            self.next_blink_time = current_time + random.uniform(min_interval, max_interval)
     
     def _draw_blended_emotion(self, x, y, width, height, emotion1, emotion2, progress):
         """Blend two emotions together during transition"""
@@ -292,7 +315,9 @@ class EmotionDisplay:
         right_eye_x = center_x + face_size * 0.2
         
         # Handle blinking in the animation
-        if frame == 3:  # Half-closed eyes
+        if self.is_blinking:
+            self._draw_closed_eyes(left_eye_x, right_eye_x, eye_y, face_size, alpha)
+        elif frame == 3:  # Half-closed eyes
             self._draw_half_closed_eyes(left_eye_x, right_eye_x, eye_y, face_size, alpha)
         elif frame == 4:  # Fully closed eyes
             self._draw_closed_eyes(left_eye_x, right_eye_x, eye_y, face_size, alpha)
@@ -329,7 +354,9 @@ class EmotionDisplay:
         right_eye_x = center_x + face_size * 0.22
         
         # Blinking in animation
-        if frame in [3, 4, 5]:
+        if self.is_blinking:
+            self._draw_closed_eyes(left_eye_x, right_eye_x, eye_y, face_size, alpha)
+        elif frame in [3, 4, 5]:
             if frame == 3:
                 self._draw_half_closed_eyes(left_eye_x, right_eye_x, eye_y, face_size, alpha)
             elif frame == 4:
