@@ -210,3 +210,148 @@ class OLEDDisplay:
         if not self.simulation:
             # Hardware cleanup would go here
             pass
+
+class OLEDInterface:
+    """Interface to the OLED display"""
+    
+    def __init__(self, simulation=False):
+        self.simulation = simulation
+        self.current_emotion = "neutral"
+        self.current_status = "Online"
+        self.display_active = True
+        
+        if not simulation:
+            try:
+                # Import hardware-specific libraries only when not in simulation mode
+                import board # type: ignore
+                import busio # type: ignore
+                import adafruit_ssd1306 # type: ignore
+                from PIL import Image, ImageDraw, ImageFont
+                
+                # Set up display
+                i2c = busio.I2C(board.SCL, board.SDA)
+                self.display = adafruit_ssd1306.SSD1306_I2C(128, 64, i2c, addr=0x3C)
+                self.image = Image.new("1", (self.display.width, self.display.height))
+                self.draw = ImageDraw.Draw(self.image)
+                
+                # Load font
+                try:
+                    self.font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 12)
+                except OSError:
+                    # Fallback to default font
+                    self.font = ImageFont.load_default()
+                
+                # Clear the display.
+                self.display.fill(0)
+                self.display.show()
+                
+                print("OLED Display Initialized")
+            except (ImportError, OSError) as e:
+                print(f"OLED hardware error: {e}")
+                print("OLED Display Initialized (Simulation Mode)")
+                self.simulation = True
+        else:
+            print("OLED Display Initialized (Simulation Mode)")
+    
+    def clear(self):
+        """Clear the display"""
+        if not self.simulation and hasattr(self, 'display'):
+            self.display.fill(0)
+            self.display.show()
+        # In simulation mode, just update status
+    
+    def show_text(self, text, x=0, y=0):
+        """Display text on the OLED screen"""
+        if not self.simulation and hasattr(self, 'display'):
+            self.draw.rectangle((0, 0, self.display.width, self.display.height), outline=0, fill=0)
+            self.draw.text((x, y), text, font=self.font, fill=255)
+            self.display.image(self.image)
+            self.display.show()
+        # In simulation mode, just update status
+    
+    def show_emotion(self, emotion):
+        """Display an emotion on the OLED screen"""
+        # Store the current emotion for both hardware and simulation
+        self.current_emotion = emotion.lower() if emotion else "neutral"
+        
+        if not self.simulation and hasattr(self, 'display'):
+            # Clear display
+            self.draw.rectangle((0, 0, self.display.width, self.display.height), outline=0, fill=0)
+            
+            # Draw emotion (simplified version for actual hardware)
+            center_x = self.display.width // 2
+            center_y = self.display.height // 2
+            
+            # Draw different faces based on emotion
+            if emotion == "happy":
+                # Draw happy face
+                self._draw_happy_face()
+            elif emotion == "sad":
+                # Draw sad face
+                self._draw_sad_face()
+            # ... other emotions would be implemented here
+            else:
+                # Default to neutral
+                self._draw_neutral_face()
+                
+            # Update the display
+            self.display.image(self.image)
+            self.display.show()
+        
+        # Log the emotion change
+        print(f"[OLED] Emotion: {self.current_emotion} | Status: {self.current_status}")
+    
+    def update_status(self, status_text):
+        """Update status text displayed on OLED"""
+        self.current_status = status_text
+        
+        if not self.simulation and hasattr(self, 'display'):
+            # Actual hardware implementation would redraw the screen here
+            # Keep emotion face but update status text at the bottom
+            self.show_emotion(self.current_emotion)  # This will redraw with the current emotion
+            
+            # Draw status text at the bottom
+            self.draw.text((0, self.display.height - 12), status_text, font=self.font, fill=255)
+            self.display.image(self.image)
+            self.display.show()
+        
+        print(f"[OLED] Emotion: {self.current_emotion} | Status: {self.current_status}")
+    
+    def get_current_emotion(self):
+        """Get the current emotion being displayed (for simulator)"""
+        return self.current_emotion
+    
+    def get_current_status(self):
+        """Get the current status text (for simulator)"""
+        return self.current_status
+    
+    # Hardware-specific drawing methods would be implemented here
+    def _draw_happy_face(self):
+        """Draw a happy face on the OLED (hardware implementation)"""
+        if not self.simulation and hasattr(self, 'draw'):
+            # Draw eyes
+            self.draw.ellipse((30, 15, 45, 30), outline=255)
+            self.draw.ellipse((80, 15, 95, 30), outline=255)
+            
+            # Draw smile
+            self.draw.arc((30, 20, 95, 60), 0, 180, fill=255, width=2)
+    
+    def _draw_sad_face(self):
+        """Draw a sad face on the OLED (hardware implementation)"""
+        if not self.simulation and hasattr(self, 'draw'):
+            # Draw eyes
+            self.draw.ellipse((30, 15, 45, 30), outline=255)
+            self.draw.ellipse((80, 15, 95, 30), outline=255)
+            
+            # Draw frown
+            self.draw.arc((30, 40, 95, 80), 180, 0, fill=255, width=2)
+    
+    def _draw_neutral_face(self):
+        """Draw a neutral face on the OLED (hardware implementation)"""
+        if not self.simulation and hasattr(self, 'draw'):
+            # Draw eyes
+            self.draw.ellipse((30, 15, 45, 30), outline=255)
+            self.draw.ellipse((80, 15, 95, 30), outline=255)
+            
+            # Draw straight mouth
+            self.draw.line((40, 50, 85, 50), fill=255, width=2)

@@ -42,6 +42,9 @@ except ImportError:
         print("Voice recognition components not available")
         voice_recognition_available = False
 
+# Import real OLED interface 
+from raspberry_pi.display.oled_interface import OLEDInterface
+
 class ArcadeSimulator(arcade.Window):
     """Robot simulator using the Arcade library"""
     
@@ -83,8 +86,14 @@ class ArcadeSimulator(arcade.Window):
         self.autopilot = True
         self.keys_pressed = self.input_handler.keys_pressed
         
+        # Initialize the OLED interface in simulation mode
+        self.oled = OLEDInterface(simulation=True)
+        
         # Initialize UI components
         self.emotion_display = EmotionDisplay()
+        # Connect the emotion display to the OLED interface
+        self.emotion_display.oled_interface = self.oled
+        
         self.dashboard = Dashboard()
         self.serial_monitor = SerialMonitor()
         self.voice_panel = VoiceRecognitionPanel()
@@ -489,10 +498,20 @@ class ArcadeSimulator(arcade.Window):
 
     def set_state_and_emotion(self, state, emotion):
         """Update the state and emotion display"""
-        self.robot.set_state_and_emotion(state, emotion)
-        # Update legacy attributes
+        # Use the OLED interface to display the emotion
+        if emotion:
+            self.oled.show_emotion(emotion.lower())
+        
+        # Update status via OLED interface
+        if state:
+            self.oled.update_status(state)
+        
+        # Keep the direct attributes updated for backward compatibility
         self.current_state = state
-        self.current_emotion = emotion.lower() if emotion else "neutral"
+        self.current_emotion = self.oled.get_current_emotion()
+        
+        # Update the robot component
+        self.robot.set_state_and_emotion(state, self.oled.get_current_emotion())
 
     def close(self):
         """Clean shutdown"""

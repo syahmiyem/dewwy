@@ -18,6 +18,9 @@ class EmotionDisplay:
         self.frames_per_second = 5
         self.last_frame_time = time.time()
         
+        # Reference to OLED interface (set by simulator)
+        self.oled_interface = None
+        
         # Map emotions to animation rendering functions
         self.emotion_animations = {
             "happy": self._animate_happy_face,
@@ -53,14 +56,22 @@ class EmotionDisplay:
         self.blink_duration = 0.2  # seconds
         self.blink_start_time = 0
     
-    def draw(self, x, y, emotion):
+    def draw(self, x, y, emotion=None):
         """Draw the emotion display at the specified position
         
         Args:
             x: Center x coordinate of the robot
             y: Center y coordinate of the robot
-            emotion: Current emotion to display
+            emotion: If provided, overrides the OLED interface emotion
         """
+        # Use the OLED interface's emotion if available and no override provided
+        if not emotion and self.oled_interface:
+            emotion = self.oled_interface.get_current_emotion()
+        
+        # Default to neutral if no emotion available
+        if not emotion:
+            emotion = "neutral"
+            
         # Update animation frame if needed
         self._update_animation_frame(emotion)
         
@@ -101,6 +112,17 @@ class EmotionDisplay:
                 display_x, display_y, display_width, display_height, 
                 self.animation_frame
             )
+            
+        # If we have a status from the OLED interface, draw it at the bottom
+        if self.oled_interface:
+            status = self.oled_interface.get_current_status()
+            if status:
+                arcade.draw_text(
+                    status,
+                    x - display_width/2 + 5, y - self.display_offset_y - display_height/2 + 5,
+                    arcade.color.WHITE,
+                    8
+                )
     
     def _update_animation_frame(self, emotion):
         """Update the current animation frame based on timer"""
