@@ -1,127 +1,98 @@
-# Dewwy - Offline Pet Robot
+# Dewwy: Offline Pet Robot
 
-An offline pet robot built using a hybrid Raspberry Pi + Arduino setup. This project simulates the robot's behavior before deploying to hardware.
+![Dewwy Robot](/docs/images/dewwy_logo.png)
 
-## Project Overview
+## Overview
 
-Dewwy is designed to:
-- Navigate autonomously with obstacle avoidance
-- Display emotions on an OLED screen
-- Respond to voice commands (offline)
-- Learn from interactions
+Dewwy is an autonomous pet robot built with a hybrid Raspberry Pi and Arduino architecture. It's designed to behave like a real pet with unique personality traits, emotions, and autonomous movement. Unlike cloud-based robots, Dewwy operates completely offline, ensuring privacy and consistent operation without internet dependency.
 
-## Components
+## Features
 
-### Hardware (Simulated)
-- Raspberry Pi: Handles AI, voice recognition, display, and Arduino communication
-- Arduino: Controls motors and sensors
-- HC-SR04 Ultrasonic sensors
-- TB6612FNG motor driver
-- OLED display
+### Core Capabilities
 
-### Software Architecture
-- **Arduino Side**: Sensor polling and motor control
-- **Raspberry Pi Side**: Robot intelligence, personality, display control
-- **Simulation**: Arcade-based visualization and virtual hardware
+- **Autonomous Movement**: Navigate environments with pet-like behaviors
+- **Emotional Expression**: Display emotions through an OLED screen
+- **Obstacle Avoidance**: Smart detection and avoidance of obstacles
+- **Interactive Voice Recognition**: Wake-word activation and command processing
+- **Adaptive Personality**: Unique traits that evolve based on interactions
+
+### Emotional Intelligence
+
+Dewwy features a sophisticated emotional system with nine distinct emotional states:
+- 😊 **Happy**: When praised or during play
+- 😢 **Sad**: When ignored or after negative interactions
+- 😐 **Neutral**: Default calm state
+- 😃 **Excited**: During energetic activities
+- 😴 **Sleepy**: When battery is low or after extended activity
+- 🤔 **Curious**: When exploring new environments or objects
+- 😨 **Scared**: When encountering obstacles suddenly
+- 😋 **Playful**: During interactive sessions
+- 😠 **Grumpy**: When repeatedly interrupted or during "bad moods"
+
+Each emotion affects Dewwy's movement patterns, blinking rates, and facial expressions, creating a more lifelike experience.
+
+### Behavior Modes
+
+Dewwy operates in several behavior states:
+- **Idle**: Stationary but emotionally responsive
+- **Roaming**: Autonomous exploration
+- **Avoiding**: Smart obstacle avoidance
+- **Sleeping**: Power conservation mode
+- **Playing**: Interactive and energetic behavior
+- **Searching**: Looking for interaction
+- **Startled**: Quick response to sudden stimuli
+
+## Hardware Components
+
+- Raspberry Pi 4 (main controller)
+- Arduino (real-time sensor and motor control)
+- HC-SR04 Ultrasonic Distance Sensor
+- TB6612FNG Dual Motor Driver
+- 1.3" OLED Display (128x64 pixels)
+- SPH0645 I2S MEMS Microphone (for voice recognition)
+- Dual DC Motors with Encoder
+- LiPo Battery Pack
+
+## Software Architecture
+
+### Key Components
+
+- **State Machine**: Manages robot behavior states
+- **Personality Engine**: Controls emotional responses and preferences
+- **Embedded OLED Display Interface**: Renders facial expressions
+- **Voice Recognition System**: Processes voice commands offline
+- **Obstacle Avoidance Algorithm**: Roomba-inspired detection and navigation
+- **Motion Control System**: Manages movement patterns based on state
+
+### Simulation Environment
+
+A comprehensive simulation environment allows you to test and interact with Dewwy:
+
+- **Arcade-based Simulator**: Graphical environment for testing
+- **Real-time Animation**: Simulates emotional expressions and movement
+- **System Monitoring**: Displays status and performance metrics
+- **Input Controls**: Keyboard commands for direct interaction
+- **Voice Command Testing**: Simulate voice recognition
 
 ## Getting Started
 
 ### Installation
 
 1. Clone the repository:
-```
-git clone https://github.com/yourusername/dewwy.git
-cd dewwy
-```
+   ```
+   git clone https://github.com/yourusername/dewwy.git
+   cd dewwy
+   ```
 
 2. Install dependencies:
-```
-pip install -r requirements.txt
-```
+   ```
+   # For Raspberry Pi
+   pip install -r requirements.txt
+   
+   # For macOS
+   pip install -r requirements_macos.txt
+   ```
 
-### Running the Simulation
+### Running the Simulator
 
-To run the robot simulation with GUI:
-```
-python raspberry_pi/main.py
-```
-
-For console-only simulation (no GUI):
-```
-python raspberry_pi/main.py --no-gui
-```
-
-To connect to real hardware:
-```
-python raspberry_pi/main.py --no-simulation
-```
-
-### Testing Serial Communication
-
-To test serial communication between Raspberry Pi and Arduino:
-```
-python tools/serial_tester.py
-```
-
-For real hardware:
-```
-python tools/serial_tester.py --real --port /dev/ttyUSB0
-```
-
-## Serial Communication Protocol
-
-Communication between Raspberry Pi and Arduino uses simple text-based commands:
-
-### Commands (Raspberry Pi → Arduino)
-- `FWD` - Move forward
-- `BCK` - Move backward
-- `LFT` - Turn left
-- `RGT` - Turn right
-- `STP` - Stop movement
-- `AUTO` - Switch to autonomous mode
-- `CMD` - Switch to command mode
-- `PING` - Check connection
-- `STATUS` - Request status information
-
-### Responses (Arduino → Raspberry Pi)
-- `DIST:123` - Distance reading (123 cm)
-- `ACK:XXX` - Acknowledge command XXX
-- `MODE:XXX` - Current mode (AUTO or CMD)
-- `PONG` - Response to PING
-- `ERR:XXX` - Error message
-
-## Tests
-
-Run the tests to verify functionality:
-```
-python -m pytest tests/
-```
-
-## Project Structure
-
-```
-dewwy/
-├── arduino/                  # Arduino firmware files
-│   ├── main_arduino/         # Main Arduino program
-│   ├── motor_control/        # Motor control functions
-│   ├── sensor_module/        # Sensor interface code
-│   ├── diagram.json          # Wokwi circuit diagram
-│   └── wokwi.toml            # Wokwi configuration
-├── raspberry_pi/             # Raspberry Pi software
-│   ├── behavior/             # Robot personality and state machine
-│   ├── communication/        # Serial communication with Arduino
-│   ├── display/              # OLED display interface
-│   └── main.py               # Main entry point
-├── simulation/               # Simulation components
-│   ├── arcade_simulator.py   # Graphics simulator (Arcade)
-│   ├── serial_visualizer.py  # Serial communication visualizer
-│   ├── virtual_motors.py     # Motor simulation
-│   └── virtual_sensors.py    # Sensor simulation
-├── tools/                    # Utility scripts
-│   └── serial_tester.py      # Serial communication testing tool
-└── tests/                    # Test files
-```
-
-## License
-
-[MIT License](LICENSE)
+Launch the simulator to test Dewwy without hardware:
