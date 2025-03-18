@@ -16,8 +16,24 @@ from simulation.arcade_components import (
     Dashboard, 
     SerialMonitor, 
     UltrasonicSensor, 
-    MotorController
+    MotorController,
+    VoiceRecognitionPanel
 )
+
+# Try to import voice recognition components
+try:
+    from raspberry_pi.audio.microphone_interface import MicrophoneInterface
+    from raspberry_pi.audio.voice_recognition import VoiceRecognizer
+    from raspberry_pi.audio.command_processor import CommandProcessor
+    voice_recognition_available = True
+except ImportError:
+    try:
+        from raspberry_pi.audio.fallback_recognition import SimpleMicrophoneInterface as MicrophoneInterface
+        from raspberry_pi.audio.fallback_recognition import SimpleVoiceRecognizer as VoiceRecognizer
+        voice_recognition_available = True
+    except ImportError:
+        print("Voice recognition components not available")
+        voice_recognition_available = False
 
 class ArcadeSimulator(arcade.Window):
     """Robot simulator using the Arcade library"""
@@ -73,6 +89,7 @@ class ArcadeSimulator(arcade.Window):
         self.emotion_display = EmotionDisplay()
         self.dashboard = Dashboard()
         self.serial_monitor = SerialMonitor()
+        self.voice_panel = VoiceRecognitionPanel()
         
         # Create sensor and motors using the component versions
         self.sensor = UltrasonicSensor(self)
@@ -93,6 +110,7 @@ class ArcadeSimulator(arcade.Window):
         # UI controls
         self.show_dashboard = True
         self.show_serial_monitor = False
+        self.show_voice_panel = True
         
         # Performance tracking
         self.frame_count = 0
@@ -115,7 +133,94 @@ class ArcadeSimulator(arcade.Window):
             "stuck_count": 0  # Counter for being stuck in same area
         }
         
+        # Initialize voice recognition if available
+        self.voice_recognizer = None
+        self.microphone = None
+        self.command_processor = None
+        
+        if voice_recognition_available:
+            self._init_voice_recognition()
+            
         print("Arcade simulator initialized successfully")
+    
+    def _init_voice_recognition(self):
+        """Initialize the voice recognition system"""
+        try:
+            # Create the microphone and voice recognizer
+            self.microphone = MicrophoneInterface(simulation=True)
+            self.voice_recognizer = VoiceRecognizer(microphone=self.microphone, simulation=True)
+            
+            # Start the microphone in the background
+            self.microphone.start_listening()
+            self.voice_recognizer.start()
+            
+            # Create a thread to check for voice commands
+            self.voice_thread = threading.Thread(target=self._voice_command_loop)
+            self.voice_thread.daemon = True
+            self.voice_thread.start()
+            
+            print("Voice recognition initialized successfully")
+        except Exception as e:
+            print(f"Error initializing voice recognition: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def _voice_command_loop(self):
+        """Background thread to check for voice commands"""
+        while True:
+            if self.voice_recognizer:
+                try:
+                    # Check for commands
+                    command = self.voice_recognizer.get_next_command(block=False)
+                    
+                    if command:
+                        print(f"Voice command detected: {command}")
+                        # Add the command to the panel
+                        self.voice_panel.add_command(command)
+                        self.voice_panel.show_command_feedback(command)
+                        
+                        # Handle the command (similar to command processor)
+                        self._handle_voice_command(command)
+                        
+                except Exception as e:
+                    print(f"Error checking voice commands: {e}")
+            
+            time.sleep(0.2)  # Check every 200ms
+    
+    def _handle_voice_command(self, command):
+        """Handle a recognized voice command"""
+        from raspberry_pi.behavior.state_machine import RobotState
+        from raspberry_pi.behavior.robot_personality import Emotion
+        
+        # Map commands to actions
+        if command == "stop":
+            self.motors.stop()
+            self.current_state = "Idle"
+        elif command == "come" or command == "follow":
+            self.motors.move_forward(0.5)
+            self.current_state = "Roaming" 
+        elif command == "sleep":
+            self.current_state = "Sleeping"
+            self.current_emotion = "sleepy"
+        elif command == "wake":
+            self.current_state = "Idle"
+            self.current_emotion = "neutral"
+        elif command == "play" or command == "dance":
+            self.current_state = "Playing"
+            self.current_emotion = "excited"
+        elif command == "praise":
+            self.current_emotion = "happy"
+        elif command == "turn":
+            self.motors.turn_right(0.5)
+            time.sleep(0.5)
+            self.motors.stop()
+        elif command == "forward":
+            self.motors.move_forward(0.5)
+        elif command == "backward":
+            self.motors.move_backward(0.5)
+        elif command == "sit":
+            self.motors.stop()
+            self.current_state = "Idle"
     
     def calculate_distance(self):
         """Calculate distance to nearest obstacle"""
@@ -345,6 +450,10 @@ class ArcadeSimulator(arcade.Window):
         # Draw serial monitor if enabled using the component
         if self.show_serial_monitor:
             self.serial_monitor.draw(self.width - 150, 250)
+        
+        # Draw voice panel if enabled
+        if self.show_voice_panel:
+            self.voice_panel.draw(self.width - 150, self.height - 120)
     
     def on_update(self, delta_time):
         """Update simulation state - keep this light and fast"""
@@ -391,6 +500,9 @@ class ArcadeSimulator(arcade.Window):
         
         # Keep robot within screen bounds
         self._constrain_to_bounds()
+        
+        # Update the voice panel
+        self.voice_panel.update()
 
     def handle_autopilot(self, distance):
         """Handle autopilot navigation with improved obstacle avoidance"""
@@ -549,6 +661,39 @@ class ArcadeSimulator(arcade.Window):
         elif key == arcade.key.D:
             # Toggle dashboard
             self.show_dashboard = not self.show_dashboard
+        elif key == arcade.key.V:
+            # Toggle voice panel
+            self.show_voice_panel = not self.show_voice_panel
+        elif key == arcade.key.W:
+            # Simulate wake word
+            if self.show_voice_panel:
+                if self.voice_panel.activate_wake_word():
+                    print("Wake word activated!")
+        elif key == arcade.key.C:
+            # Execute the selected test command
+            if self.show_voice_panel:
+                command = self.voice_panel.get_selected_command()
+                
+                # Find the matching command key
+                from raspberry_pi.audio.command_processor import CommandProcessor
+                command_key = None
+                for phrase, key in CommandProcessor.command_keywords.items():
+                    if phrase == command:
+                        command_key = key
+                        break
+                
+                if command_key:
+                    self.voice_panel.add_command(command)
+                    self.voice_panel.show_command_feedback(command_key)
+                    self._handle_voice_command(command_key)
+        elif key == arcade.key.LEFT:
+            # Previous test command
+            if self.show_voice_panel:
+                self.voice_panel.select_prev_command()
+        elif key == arcade.key.RIGHT:
+            # Next test command
+            if self.show_voice_panel:
+                self.voice_panel.select_next_command()
         elif key == arcade.key.Q or key == arcade.key.ESCAPE:
             print("Exit key pressed - closing window")
             self.close()
@@ -567,6 +712,13 @@ class ArcadeSimulator(arcade.Window):
     def close(self):
         """Clean shutdown"""
         print("Closing simulator window")
+        
+        # Shutdown voice recognition if active
+        if self.voice_recognizer:
+            self.voice_recognizer.stop()
+        
+        if self.microphone:
+            self.microphone.shutdown()
 
 
 def run_simulator():

@@ -5,6 +5,23 @@ import random
 class CommandProcessor:
     """Process voice commands and convert them to robot behaviors"""
     
+    # Move command_keywords to class level for accessibility
+    command_keywords = {
+        "come here": "come",
+        "follow me": "follow",
+        "stop": "stop",
+        "go to sleep": "sleep",
+        "wake up": "wake", 
+        "play": "play",
+        "good boy": "praise",
+        "good girl": "praise",
+        "sit": "sit",
+        "turn around": "turn",
+        "go forward": "forward",
+        "go backward": "backward",
+        "dance": "dance"
+    }
+    
     def __init__(self, voice_recognizer=None, state_machine=None, personality=None):
         self.voice_recognizer = voice_recognizer
         self.state_machine = state_machine
