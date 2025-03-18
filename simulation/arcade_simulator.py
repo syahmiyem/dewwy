@@ -17,8 +17,12 @@ from simulation.arcade_components import (
     SerialMonitor, 
     UltrasonicSensor, 
     MotorController,
-    VoiceRecognitionPanel
+    VoiceRecognitionPanel,
+    ControlsPanel
 )
+
+# Import layout helper
+from simulation.arcade_components.layout_helper import LayoutHelper
 
 # Try to import voice recognition components
 try:
@@ -42,6 +46,9 @@ class ArcadeSimulator(arcade.Window):
         super().__init__(width, height, title)
         
         arcade.set_background_color(arcade.color.WHITE)
+        
+        # Create layout helper for consistent positioning
+        self.layout = LayoutHelper(width, height)
         
         # Robot state
         self.robot_x = width // 2
@@ -90,6 +97,7 @@ class ArcadeSimulator(arcade.Window):
         self.dashboard = Dashboard()
         self.serial_monitor = SerialMonitor()
         self.voice_panel = VoiceRecognitionPanel()
+        self.controls_panel = ControlsPanel()  # Add controls panel
         
         # Create sensor and motors using the component versions
         self.sensor = UltrasonicSensor(self)
@@ -111,6 +119,7 @@ class ArcadeSimulator(arcade.Window):
         self.show_dashboard = True
         self.show_serial_monitor = False
         self.show_voice_panel = True
+        self.show_controls_help = False  # Add control for help panel visibility
         
         # Performance tracking
         self.frame_count = 0
@@ -366,15 +375,43 @@ class ArcadeSimulator(arcade.Window):
         # Clear screen and start drawing
         self.clear()
         
-        # Draw border obstacles with different color
+        # Set a light background for the entire window
+        arcade.draw_rectangle_filled(
+            self.width / 2, self.height / 2,
+            self.width, self.height,
+            arcade.color.LIGHT_GRAY
+        )
+        
+        # ==============================================
+        # ROBOT VISUALIZATION CONTAINER (LEFT SIDE)
+        # ==============================================
+        # Get environment region from layout helper
+        env = self.layout.environment_region
+        
+        # Draw environment container background
+        arcade.draw_rectangle_filled(
+            env["x"], env["y"],
+            env["width"], env["height"],
+            (200, 210, 230)  # Custom light blue-gray RGB color
+        )
+        
+        # Draw environment border
+        arcade.draw_rectangle_outline(
+            env["x"], env["y"],
+            env["width"], env["height"],
+            arcade.color.DARK_BLUE,
+            2
+        )
+        
+        # Draw border obstacles within environment
         for obs in self.border_obstacles:
             arcade.draw_rectangle_filled(
                 obs[0] + obs[2]/2, obs[1] + obs[3]/2,
                 obs[2], obs[3],
-                arcade.color.DARK_BLUE  # Use a different color for borders
+                arcade.color.DARK_BLUE
             )
         
-        # Draw interior obstacles
+        # Draw interior obstacles within environment
         for obs in self.interior_obstacles:
             arcade.draw_rectangle_filled(
                 obs[0] + obs[2]/2, obs[1] + obs[3]/2,
@@ -421,39 +458,118 @@ class ArcadeSimulator(arcade.Window):
             2
         )
         
-        # Draw basic status info (minimal version always visible)
+        # ==============================================
+        # STATUS CONTAINER - TOP BAR
+        # ==============================================
+        # Get top bar region from layout helper
+        top_bar = self.layout.top_bar_region
+        
+        # Draw the status bar
+        arcade.draw_rectangle_filled(
+            top_bar["x"], top_bar["y"],
+            top_bar["width"], top_bar["height"],
+            (40, 44, 52, 230)  # Dark semi-transparent background
+        )
+        
+        # Draw status information in the status bar
+        status_y = self.height - 30
+        
+        # Distance reading
         arcade.draw_text(
             f"Distance: {self.last_distance:.1f}px",
-            20, self.height - 30,
-            arcade.color.BLACK,
+            20, status_y,
+            arcade.color.WHITE,
             16
         )
         
+        # Robot state - Use an estimated width instead of measure_text
+        state_text = f"State: {self.current_state}"
+        # Estimate width based on character count (rough approximation)
+        estimated_width = len(state_text) * 9  # ~9 pixels per character at font size 16
         arcade.draw_text(
-            f"State: {self.current_state}",
-            20, self.height - 60,
-            arcade.color.BLACK,
+            state_text,
+            (self.width - estimated_width) / 2, status_y,
+            arcade.color.WHITE,
             16
         )
         
+        # FPS counter
         arcade.draw_text(
             f"FPS: {self.fps}",
-            self.width - 100, self.height - 30,
-            arcade.color.BLACK,
+            self.width - 100, status_y,
+            arcade.color.WHITE,
             16
         )
         
-        # Draw dashboard if enabled using the component
-        if self.show_dashboard:
-            self.dashboard.draw(120, 120)
+        # Mode indicator (autopilot)
+        mode_text = "Autopilot: ON" if self.autopilot else "Manual Control"
+        arcade.draw_text(
+            mode_text,
+            self.width - 250, status_y,
+            arcade.color.GREEN if self.autopilot else arcade.color.YELLOW,
+            14
+        )
         
-        # Draw serial monitor if enabled using the component
-        if self.show_serial_monitor:
-            self.serial_monitor.draw(self.width - 150, 250)
+        # Add help hint (H key) in the status bar
+        arcade.draw_text(
+            "Press H for Controls",
+            20, status_y - 20,
+            arcade.color.LIGHT_GRAY,
+            12
+        )
         
-        # Draw voice panel if enabled
+        # ==============================================
+        # RIGHT SIDE PANELS
+        # ==============================================
+        
+        # Heading for right side panel area
+        right_area_x = self.layout.left_width + (self.layout.right_width // 2)
+        arcade.draw_text(
+            "CONTROLS & MONITORING",
+            right_area_x - 120, self.height - 80,
+            arcade.color.DARK_BLUE,
+            16,
+            bold=True
+        )
+        
+        # Voice panel (top-right)
         if self.show_voice_panel:
-            self.voice_panel.draw(self.width - 150, self.height - 120)
+            voice_region = self.layout.voice_panel_region
+            self.voice_panel.draw(
+                voice_region["x"],
+                voice_region["y"],
+                voice_region["width"],
+                voice_region["height"]
+            )
+        
+        # Dashboard (middle-right)
+        if self.show_dashboard:
+            dashboard_region = self.layout.dashboard_region
+            self.dashboard.draw(
+                dashboard_region["x"],
+                dashboard_region["y"],
+                dashboard_region["width"],
+                dashboard_region["height"]
+            )
+        
+        # Serial monitor (can be toggled with dashboard)
+        if self.show_serial_monitor:
+            serial_region = self.layout.serial_monitor_region
+            self.serial_monitor.draw(
+                serial_region["x"],
+                serial_region["y"],
+                serial_region["width"],
+                serial_region["height"]
+            )
+        
+        # Controls/help panel (bottom-right)
+        help_region = self.layout.help_region
+        self.controls_panel.draw(
+            help_region["x"], 
+            help_region["y"],
+            help_region["width"],
+            help_region["height"]
+        )
     
     def on_update(self, delta_time):
         """Update simulation state - keep this light and fast"""
@@ -664,36 +780,35 @@ class ArcadeSimulator(arcade.Window):
         elif key == arcade.key.V:
             # Toggle voice panel
             self.show_voice_panel = not self.show_voice_panel
+        elif key == arcade.key.H:
+            # Toggle help/controls panel
+            self.controls_panel.toggle()
         elif key == arcade.key.W:
             # Simulate wake word
             if self.show_voice_panel:
-                if self.voice_panel.activate_wake_word():
-                    print("Wake word activated!")
+                self.voice_panel.activate_wake_word()
         elif key == arcade.key.C:
             # Execute the selected test command
             if self.show_voice_panel:
                 command = self.voice_panel.get_selected_command()
-                
-                # Find the matching command key
-                from raspberry_pi.audio.command_processor import CommandProcessor
-                command_key = None
-                for phrase, key in CommandProcessor.command_keywords.items():
-                    if phrase == command:
-                        command_key = key
-                        break
-                
-                if command_key:
-                    self.voice_panel.add_command(command)
-                    self.voice_panel.show_command_feedback(command_key)
-                    self._handle_voice_command(command_key)
+                self._handle_voice_command(command)
+                self.voice_panel.show_command_feedback(command)
         elif key == arcade.key.LEFT:
-            # Previous test command
-            if self.show_voice_panel:
+            if self.show_voice_panel and modifiers & arcade.key.MOD_SHIFT:
+                # Previous test command
                 self.voice_panel.select_prev_command()
+            else:
+                # Turn robot left
+                self.motors.turn_left(0.5)
+                self.add_serial_message("LFT command", "tx")
         elif key == arcade.key.RIGHT:
-            # Next test command
-            if self.show_voice_panel:
+            if self.show_voice_panel and modifiers & arcade.key.MOD_SHIFT:
+                # Next test command
                 self.voice_panel.select_next_command()
+            else:
+                # Turn robot right
+                self.motors.turn_right(0.5)
+                self.add_serial_message("RGT command", "tx")
         elif key == arcade.key.Q or key == arcade.key.ESCAPE:
             print("Exit key pressed - closing window")
             self.close()
@@ -716,10 +831,8 @@ class ArcadeSimulator(arcade.Window):
         # Shutdown voice recognition if active
         if self.voice_recognizer:
             self.voice_recognizer.stop()
-        
         if self.microphone:
             self.microphone.shutdown()
-
 
 def run_simulator():
     simulator = ArcadeSimulator()

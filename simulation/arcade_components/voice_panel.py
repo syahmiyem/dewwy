@@ -1,5 +1,6 @@
 import arcade
 import time
+import math
 
 class VoiceRecognitionPanel:
     """Component for visualizing and testing voice recognition"""
@@ -82,20 +83,36 @@ class VoiceRecognitionPanel:
         if self.command_feedback and current_time - self.feedback_time > 2.0:
             self.command_feedback = ""
     
-    def draw(self, x, y, width=300, height=200):
+    def draw(self, x, y, width=300, height=250):
         """Draw the voice recognition panel"""
-        # Background panel
+        # Background panel with rounded corners
         arcade.draw_rectangle_filled(
             x, y, width, height,
-            (0, 0, 0, 150)  # Semi-transparent black
+            (40, 44, 52, 220)  # Semi-transparent dark gray
+        )
+        
+        # Panel border
+        arcade.draw_rectangle_outline(
+            x, y, width, height,
+            (80, 90, 100),
+            2
         )
         
         # Title
         arcade.draw_text(
-            "Voice Recognition",
-            x - width/2 + 10, y + height/2 - 20,
+            "VOICE RECOGNITION",
+            x - width/2 + 10, y + height/2 - 25,
             arcade.color.WHITE,
-            16
+            16,
+            bold=True
+        )
+        
+        # Horizontal separator
+        arcade.draw_line(
+            x - width/2 + 10, y + height/2 - 35,
+            x + width/2 - 10, y + height/2 - 35,
+            arcade.color.GRAY,
+            1
         )
         
         # Status indicator
@@ -113,57 +130,78 @@ class VoiceRecognitionPanel:
         
         arcade.draw_text(
             status_text,
-            x - width/2 + 10, y + height/2 - 50,
+            x - width/2 + 10, y + height/2 - 60,
             status_color,
             14
         )
         
-        # Draw listening animation
+        # Draw listening animation - more dynamic visualizer
         if self.voice_active:
-            center_x = x - width/2 + 30
-            center_y = y + height/2 - 80
+            center_x = x - width/2 + 40
+            center_y = y + height/2 - 90
+            
+            # Draw visualizer background
+            arcade.draw_rectangle_filled(
+                x, center_y,
+                width - 20, 40,
+                arcade.color.DARK_BLUE_GRAY
+            )
             
             # Calculate animation values
-            import math
-            bar_count = 5
+            bar_count = 8
             for i in range(bar_count):
                 # Calculate height based on sine wave with offset per bar
-                bar_height = 6.0 + 5.0 * math.sin(self.listening_animation + i * 0.8)
+                phase_offset = i * 0.7
+                amplitude = 5 + 10 * abs(math.sin(self.listening_animation + phase_offset))
+                bar_width = (width - 40) / bar_count - 3
                 
                 arcade.draw_rectangle_filled(
-                    center_x + i * 10, 
+                    center_x + i * ((width - 40) / bar_count), 
                     center_y,
-                    4, 
-                    bar_height,
+                    bar_width, 
+                    amplitude,
                     arcade.color.ELECTRIC_GREEN
                 )
         
-        # Wake word button
-        wake_button_y = y + height/2 - 110
+        # Wake word button - more attractive design
+        wake_button_y = y + height/2 - 120
+        
+        # Button background
         arcade.draw_rectangle_filled(
-            x - width/2 + 70, wake_button_y,
-            120, 30,
+            x, wake_button_y,
+            width - 40, 30,
             arcade.color.DARK_BLUE
         )
         
+        # Button highlight/glow when active
+        if self.wake_word_active:
+            arcade.draw_rectangle_outline(
+                x, wake_button_y,
+                width - 40, 30,
+                arcade.color.ELECTRIC_GREEN,
+                2
+            )
+        
         arcade.draw_text(
-            f"Say \"{self.wake_word}\"",
-            x - width/2 + 20, wake_button_y - 7,
+            f'Say "{self.wake_word}" (W key)',
+            x - 80, wake_button_y - 7,
             arcade.color.WHITE,
             12
         )
         
-        # Command selector
-        command_y = y + height/2 - 150
+        # Command selector - improved design
+        command_y = y + height/2 - 160
+        
+        # Selector background
         arcade.draw_rectangle_filled(
             x, command_y,
-            width - 20, 30,
+            width - 40, 30,
             arcade.color.DARK_SLATE_GRAY
         )
         
         arcade.draw_text(
             f"Test: {self.get_selected_command()}",
-            x - width/2 + 20, command_y - 7,
+            x - 80, command_y - 7,
             arcade.color.WHITE,
             12
         )
@@ -171,7 +209,7 @@ class VoiceRecognitionPanel:
         # Left/right indicators for selection
         arcade.draw_text(
             "◀",
-            x - width/2 + 10, command_y - 7,
+            x - width/2 + 20, command_y - 7,
             arcade.color.LIGHT_GRAY,
             12
         )
@@ -183,34 +221,52 @@ class VoiceRecognitionPanel:
             12
         )
         
-        # Command history
-        history_y = y - height/2 + 80
+        # Command history with background
+        history_y = y - height/2 + 90
         arcade.draw_text(
             "Command History:",
-            x - width/2 + 10, history_y,
+            x - width/2 + 10, history_y + 10,
             arcade.color.LIGHT_BLUE,
             12
+        )
+        
+        # History background
+        arcade.draw_rectangle_filled(
+            x, history_y - 40,
+            width - 20, 80,
+            arcade.color.DARK_BLUE_GRAY
         )
         
         for i, cmd in enumerate(self.last_commands):
             arcade.draw_text(
                 f"{cmd['time']}: {cmd['command']}",
-                x - width/2 + 10, history_y - 20 - (i * 20),
+                x - width/2 + 15, history_y - 10 - (i * 20),
                 arcade.color.WHITE,
                 10
             )
         
-        # Feedback for executed command
+        # Feedback for executed command - improved visibility
         if self.command_feedback:
+            # Green feedback box
             arcade.draw_rectangle_filled(
                 x, y - height/2 + 30,
                 width - 20, 30,
                 arcade.color.DARK_GREEN
             )
             
+            # Add subtle glow/pulse effect
+            pulse_scale = 1.0 + 0.05 * math.sin(time.time() * 10)
+            arcade.draw_rectangle_outline(
+                x, y - height/2 + 30,
+                (width - 20) * pulse_scale, 30 * pulse_scale,
+                arcade.color.GREEN,
+                2
+            )
+            
             arcade.draw_text(
                 f"Executed: {self.command_feedback}",
                 x - width/2 + 20, y - height/2 + 23,
                 arcade.color.WHITE,
-                12
+                12,
+                bold=True
             )
