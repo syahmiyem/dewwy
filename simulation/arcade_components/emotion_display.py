@@ -15,6 +15,7 @@ class EmotionDisplay:
         
         # Animation properties
         self.animation_frame = 0
+        self.animation_time = 0
         self.frames_per_second = 5
         self.last_frame_time = time.time()
         
@@ -129,6 +130,7 @@ class EmotionDisplay:
         # Check for emotion change
         if emotion != self.last_emotion:
             self.animation_frame = 0
+            self.animation_time = 0  # Reset animation time on emotion change
             self.last_emotion = emotion
         
         # Update frame based on timer
@@ -139,6 +141,10 @@ class EmotionDisplay:
             
             # Advance frame and wrap around
             self.animation_frame = (self.animation_frame + 1) % frame_count
+            
+            # Update animation time (for smooth animations)
+            self.animation_time += 1.0 / self.frames_per_second
+            
             self.last_frame_time = current_time
             
         # Handle random blinking
@@ -221,15 +227,19 @@ class EmotionDisplay:
         )
     
     def _animate_happy_face(self, x, y, width, height, frame):
-        """Draw the happy face with animation"""
+        """Draw an improved happy face with organic animation"""
         center_x = x + width/2
         center_y = y + height/2
         face_size = min(width, height) * 0.8
         
-        # Draw eyes
-        eye_y = center_y + face_size * 0.1
-        left_eye_x = center_x - face_size * 0.2
-        right_eye_x = center_x + face_size * 0.2
+        # Add subtle bouncy movement
+        bounce = math.sin(self.animation_time * 3) * 2
+        center_y += bounce
+        
+        # Draw eyes - with blinking and more life
+        eye_y = center_y + face_size * 0.12
+        left_eye_x = center_x - face_size * 0.22
+        right_eye_x = center_x + face_size * 0.22
         
         # Blinking in animation
         if frame in [3, 4, 5]:
@@ -242,18 +252,33 @@ class EmotionDisplay:
         else:
             self._draw_open_eyes(left_eye_x, right_eye_x, eye_y, face_size)
         
-        # Draw smile - with dynamic curve based on frame
-        smile_y = center_y - face_size * 0.1
-        smile_width = face_size * 0.5
-        smile_height = face_size * (0.3 + (0.05 if frame % 2 == 1 else 0))
+        # Draw smile - FIXED positioning for proper smile shape
+        smile_y = center_y - face_size * 0.15  # Position slightly lower
+        smile_width = face_size * (0.48 + math.sin(self.animation_time * 2) * 0.03)
+        smile_height = face_size * (0.32 + bounce/20)
         
-        # Draw the smile as an arc with varying height
+        # FIXED: Use correct angles for smile curve (upward arc)
+        start_angle = 200  # Start angle (degrees)
+        end_angle = 340    # End angle (degrees)
+        
         arcade.draw_arc_outline(
             center_x, smile_y,
             smile_width, smile_height,
             arcade.color.WHITE,
-            0, 180,
+            start_angle, end_angle,
             3
+        )
+        
+        # Inner smile curve to show mouth depth
+        inner_width = smile_width * 0.8
+        inner_height = smile_height * 0.5
+        
+        arcade.draw_arc_outline(
+            center_x, smile_y - smile_height * 0.1,
+            inner_width, inner_height,
+            arcade.color.WHITE,
+            start_angle, end_angle,
+            2
         )
     
     def _animate_sad_face(self, x, y, width, height, frame):
@@ -285,6 +310,7 @@ class EmotionDisplay:
         frown_width = face_size * 0.5
         frown_height = face_size * (0.3 + (0.05 if frame == 5 else 0))
         
+        # FIXED: Use correct angles for frown (this is already correct at 180-360 degrees)
         arcade.draw_arc_outline(
             center_x, frown_y + frown_height,
             frown_width, frown_height,
@@ -363,16 +389,12 @@ class EmotionDisplay:
             )
     
     def _animate_excited_face(self, x, y, width, height, frame):
-        """Draw an excited face with bouncy animation"""
+        """Draw an improved excited face with bouncy animation"""
         # Apply a bounce effect to the whole face
-        bounce_offset = 0
-        if frame == 1:
-            bounce_offset = 2
-        elif frame == 3:
-            bounce_offset = -2
-            
+        bounce_offset = math.sin(self.animation_time * 5) * 3
+        
         center_x = x + width/2
-        center_y = y + height/2 + bounce_offset  # Apply bounce to center position
+        center_y = y + height/2 + bounce_offset
         face_size = min(width, height) * 0.8
         
         # Draw wide eyes with pupils
@@ -394,27 +416,32 @@ class EmotionDisplay:
             arcade.draw_circle_filled(left_eye_x, eye_y, pupil_size, arcade.color.BLACK)
             arcade.draw_circle_filled(right_eye_x, eye_y, pupil_size, arcade.color.BLACK)
         
-        # Draw big open smile
-        smile_y = center_y - face_size * 0.1
-        smile_width = face_size * 0.5
-        smile_height = face_size * 0.3
+        # Draw big open smile - FIXED positioning
+        smile_y = center_y - face_size * 0.15  # Lower position for smile
+        smile_width = face_size * (0.56 + math.sin(self.animation_time * 4) * 0.04)
+        smile_height = face_size * 0.35
         
-        # Outer smile arc
+        # FIXED: Use correct angles for smile curve (upward arc)
+        start_angle = 200  # Start angle (degrees)
+        end_angle = 340    # End angle (degrees)
+        
         arcade.draw_arc_outline(
             center_x, smile_y,
             smile_width, smile_height,
             arcade.color.WHITE,
-            0, 180,
+            start_angle, end_angle,
             3
         )
         
-        # Inner smile line to create open mouth effect - varies with frame
-        inner_width = smile_width * (0.7 + (frame % 2) * 0.05)
+        # Inner smile line to create open mouth effect
+        inner_width = smile_width * 0.8
+        inner_height = smile_height * 0.6
+        
         arcade.draw_arc_outline(
-            center_x, smile_y - smile_height * 0.2,
-            inner_width, smile_height * 0.5,
+            center_x, smile_y - smile_height * 0.1,  # Slightly lower for depth
+            inner_width, inner_height,
             arcade.color.WHITE,
-            0, 180,
+            start_angle, end_angle,
             2
         )
     
@@ -559,15 +586,18 @@ class EmotionDisplay:
         smile_width = face_size * 0.6
         smile_height = face_size * 0.35
         
+        # FIXED: Use correct angles for smile curve (upward arc)
+        start_angle = 200  # Start angle (degrees)
+        end_angle = 340    # End angle (degrees)
+        
         # Draw different mouth shapes based on frame
         if frame in [1, 2, 3]:
             # Tongue out
-            # Draw smile arc
             arcade.draw_arc_outline(
                 center_x, smile_y,
                 smile_width, smile_height,
                 arcade.color.WHITE,
-                0, 180,
+                start_angle, end_angle,
                 3
             )
             
@@ -585,7 +615,7 @@ class EmotionDisplay:
                 center_x, smile_y,
                 smile_width, smile_height,
                 arcade.color.WHITE,
-                0, 180,
+                start_angle, end_angle,
                 3
             )
     
