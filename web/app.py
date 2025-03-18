@@ -8,15 +8,21 @@ from flask_socketio import SocketIO, emit
 # Add project root to Python path for proper importing
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Import the headless simulator
-from web.arcade_headless import HeadlessArcadeSimulator
-
+# Create the Flask app
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'dewwy-secret-key'
-socketio = SocketIO(app)
 
-# Create a global simulator instance
-simulator = HeadlessArcadeSimulator(width=800, height=600)
+# Initialize SocketIO with engineio_logger for debugging
+socketio = SocketIO(app, cors_allowed_origins="*", logger=True, engineio_logger=True)
+
+# Import the headless simulator (only if needed - import conditionally to avoid errors)
+try:
+    from web.arcade_headless import HeadlessArcadeSimulator
+    # Create a global simulator instance
+    simulator = HeadlessArcadeSimulator(width=800, height=600)
+except ImportError:
+    print("Warning: Could not import HeadlessArcadeSimulator. Some features may be unavailable.")
+    simulator = None
 
 # Key mapping from web to arcade keycodes
 KEY_MAPPING = {
@@ -51,7 +57,7 @@ def handle_connect():
     """Handle client connection to WebSocket"""
     print("Client connected")
     # Start simulator if it's not already running
-    if not simulator.running:
+    if simulator and not simulator.running:
         simulator.start()
 
 @socketio.on('disconnect')
@@ -64,7 +70,7 @@ def handle_disconnect():
 def handle_key_down(data):
     """Handle key press event from client"""
     key = data.get('key')
-    if key in KEY_MAPPING:
+    if simulator and key in KEY_MAPPING:
         arcade_key = KEY_MAPPING[key]
         simulator.press_key(arcade_key)
         emit('key_processed', {'key': key, 'action': 'down'})
@@ -73,7 +79,7 @@ def handle_key_down(data):
 def handle_key_up(data):
     """Handle key release event from client"""
     key = data.get('key')
-    if key in KEY_MAPPING:
+    if simulator and key in KEY_MAPPING:
         arcade_key = KEY_MAPPING[key]
         simulator.release_key(arcade_key)
         emit('key_processed', {'key': key, 'action': 'up'})
@@ -81,31 +87,41 @@ def handle_key_up(data):
 @socketio.on('request_frame')
 def handle_frame_request():
     """Send the latest frame when requested"""
-    frame = simulator.get_frame(block=False)
-    if frame:
-        emit('frame_update', frame)
+    if simulator:
+        frame = simulator.get_frame(block=False)
+        if frame:
+            emit('frame_update', frame)
 
 def stream_frames():
     """Background task to stream frames to clients"""
     while True:
-        frame = simulator.get_frame(block=True, timeout=1.0)
-        if frame:
-            socketio.emit('frame_update', frame)
+        if simulator:
+            frame = simulator.get_frame(block=True, timeout=1.0)
+            if frame:
+                socketio.emit('frame_update', frame)
         socketio.sleep(0.033)  # ~30 fps
 
 @app.route('/api/status')
 def get_status():
     """Get robot status as JSON"""
-    status = {
-        "state": simulator.simulator.current_state if simulator.simulator else "Initializing",
-        "emotion": simulator.simulator.current_emotion if simulator.simulator else "neutral",
-        "time": time.time()
-    }
+    if simulator and hasattr(simulator, 'simulator'):
+        status = {
+            "state": simulator.simulator.current_state,
+            "emotion": simulator.simulator.current_emotion,
+            "time": time.time()
+        }
+    else:
+        status = {
+            "state": "Initializing",
+            "emotion": "neutral",
+            "time": time.time()
+        }
     return jsonify(status)
 
 if __name__ == '__main__':
     # Start the simulator
-    simulator.start()
+    if simulator:
+        simulator.start()
     
     # Start the background task for streaming frames
     socketio.start_background_task(stream_frames)
