@@ -1,3 +1,6 @@
 flask>=2.0.0
-numpy>=1.19.0
+flask-socketio>=5.0.0
+eventlet>=0.30.0
 pillow>=8.0.0
+numpy>=1.19.0
+arcade>=2.6.0

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dewwy - Arcade Simulator</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/simulator.css') }}">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Dewwy Pet Robot Simulator</h1>
+            <div class="status-bar">
+                <span id="connection-status" class="status connecting">Connecting...</span>
+                <span id="fps-counter">0 FPS</span>
+            </div>
+        </header>
+        
+        <div class="simulator-container">
+            <canvas id="simulator-canvas" width="800" height="600"></canvas>
+            
+            <div class="controls-info">
+                <h3>Keyboard Controls:</h3>
+                <ul>
+                    <li><strong>Arrow Keys</strong>: Move robot</li>
+                    <li><strong>Space</strong>: Stop robot</li>
+                    <li><strong>A</strong>: Toggle autopilot</li>
+                    <li><strong>R</strong>: Reset position</li>
+                    <li><strong>W</strong>: Wake word</li>
+                    <li><strong>C</strong>: Execute command</li>
+                    <li><strong>V</strong>: Toggle voice panel</li>
+                    <li><strong>S</strong>: Toggle serial monitor</li>
+                    <li><strong>D</strong>: Toggle dashboard</li>
+                </ul>
+            </div>
+        </div>
+        
+        <div class="robot-status">
+            <div class="status-item">
+                <span class="label">State:</span>
+                <span class="value" id="robot-state">Initializing...</span>
+            </div>
+            <div class="status-item">
+                <span class="label">Emotion:</span>
+                <span class="value" id="robot-emotion">Neutral</span>
+            </div>
+        </div>
+        
+        <footer>
+            <p>Running Dewwy Pet Robot Simulator &copy; 2023</p>
+        </footer>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/simulator.js') }}"></script>
+</body>
+</html>
