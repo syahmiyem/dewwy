@@ -16,8 +16,23 @@ class EmotionDisplay:
         # Animation properties
         self.animation_frame = 0
         self.animation_time = 0
-        self.frames_per_second = 5
+        # Base frames per second
+        self.base_frames_per_second = 5
+        self.frames_per_second = self.base_frames_per_second
         self.last_frame_time = time.time()
+        
+        # Emotion-specific animation speeds
+        self.emotion_speeds = {
+            "happy": 1.2,       # 20% faster
+            "sad": 0.8,         # 20% slower
+            "neutral": 1.0,     # Normal speed
+            "excited": 1.5,     # 50% faster
+            "sleepy": 0.5,      # 50% slower
+            "curious": 0.9,     # Slightly slower
+            "scared": 1.3,      # Faster
+            "playful": 1.4,     # Faster
+            "grumpy": 0.7       # Slower
+        }
         
         # Reference to OLED interface (set by simulator)
         self.oled_interface = None
@@ -132,6 +147,9 @@ class EmotionDisplay:
             self.animation_frame = 0
             self.animation_time = 0  # Reset animation time on emotion change
             self.last_emotion = emotion
+            
+            # Set emotion-specific speed
+            self.frames_per_second = self.base_frames_per_second * self.emotion_speeds.get(emotion.lower(), 1.0)
         
         # Update frame based on timer
         current_time = time.time()
