@@ -71,6 +71,14 @@ class EmotionDisplay:
         self.is_blinking = False
         self.blink_duration = 0.2  # seconds
         self.blink_start_time = 0
+        
+        # Transition animation properties
+        self.transitioning = False
+        self.transition_start_time = 0
+        self.transition_duration = 0.5  # seconds
+        self.transition_from_emotion = "neutral"
+        self.transition_to_emotion = "neutral"
+        self.transition_progress = 0  # 0 to 1
     
     def draw(self, x, y, emotion=None):
         """Draw the emotion display at the specified position
@@ -88,6 +96,20 @@ class EmotionDisplay:
         if not emotion:
             emotion = "neutral"
             
+        # Handle emotion transitions
+        if self.transitioning:
+            # Calculate transition progress
+            elapsed_time = time.time() - self.transition_start_time
+            self.transition_progress = min(1, elapsed_time / self.transition_duration)
+            
+            # Apply easing function to make transitions more natural
+            eased_progress = self.ease_in_out_cubic(self.transition_progress)
+            
+            # If transition is complete, stop transitioning
+            if self.transition_progress >= 1:
+                self.transitioning = False
+                self.last_emotion = emotion
+        
         # Update animation frame if needed
         self._update_animation_frame(emotion)
         
@@ -116,7 +138,14 @@ class EmotionDisplay:
         
         # Draw appropriate emotion animation frame
         emotion = emotion.lower()
-        if emotion in self.emotion_animations:
+        if self.transitioning:
+            # Blend between two emotions
+            self._draw_blended_emotion(
+                display_x, display_y, display_width, display_height,
+                self.transition_from_emotion, self.transition_to_emotion,
+                self.transition_progress
+            )
+        elif emotion in self.emotion_animations:
             # Call the appropriate animation function
             self.emotion_animations[emotion](
                 display_x, display_y, display_width, display_height, 
@@ -143,10 +172,13 @@ class EmotionDisplay:
     def _update_animation_frame(self, emotion):
         """Update the current animation frame based on timer"""
         # Check for emotion change
-        if emotion != self.last_emotion:
-            self.animation_frame = 0
-            self.animation_time = 0  # Reset animation time on emotion change
-            self.last_emotion = emotion
+        if emotion != self.last_emotion and not self.transitioning:
+            # Start a transition
+            self.transitioning = True
+            self.transition_start_time = time.time()
+            self.transition_from_emotion = self.last_emotion
+            self.transition_to_emotion = emotion
+            self.transition_progress = 0
             
             # Set emotion-specific speed
             self.frames_per_second = self.base_frames_per_second * self.emotion_speeds.get(emotion.lower(), 1.0)
@@ -180,43 +212,79 @@ class EmotionDisplay:
             # Schedule next blink
             self.next_blink_time = current_time + random.uniform(2, 6)
     
+    def _draw_blended_emotion(self, x, y, width, height, emotion1, emotion2, progress):
+        """Blend two emotions together during transition"""
+        # Ensure emotions are valid
+        if emotion1 not in self.emotion_animations or emotion2 not in self.emotion_animations:
+            return
+        
+        # Apply easing to progress for smoother transitions
+        eased_progress = self.ease_in_out_cubic(progress)
+        
+        # Draw first emotion (fading out)
+        alpha1 = int(255 * (1 - eased_progress))
+        self.emotion_animations[emotion1](
+            x, y, width, height, 
+            self.animation_frame,
+            alpha=alpha1
+        )
+        
+        # Draw second emotion (fading in)
+        alpha2 = int(255 * eased_progress)
+        self.emotion_animations[emotion2](
+            x, y, width, height, 
+            self.animation_frame,
+            alpha=alpha2
+        )
+    
+    def ease_in_out_cubic(self, x):
+        """Easing function for smooth animation"""
+        if x < 0.5:
+            return 4 * x * x * x
+        else:
+            return 1 - pow(-2 * x + 2, 3) / 2
+    
     # Helper drawing methods for eye states
-    def _draw_open_eyes(self, left_x, right_x, y, face_size):
+    def _draw_open_eyes(self, left_x, right_x, y, face_size, alpha=255):
         """Draw regular open eyes"""
         eye_size = face_size * 0.1
-        arcade.draw_circle_filled(left_x, y, eye_size, arcade.color.WHITE)
-        arcade.draw_circle_filled(right_x, y, eye_size, arcade.color.WHITE)
+        white_with_alpha = (255, 255, 255, alpha)
+        arcade.draw_circle_filled(left_x, y, eye_size, white_with_alpha)
+        arcade.draw_circle_filled(right_x, y, eye_size, white_with_alpha)
     
-    def _draw_half_closed_eyes(self, left_x, right_x, y, face_size):
+    def _draw_half_closed_eyes(self, left_x, right_x, y, face_size, alpha=255):
         """Draw half-closed eyes"""
         eye_width = face_size * 0.15
         eye_height = face_size * 0.05
+        white_with_alpha = (255, 255, 255, alpha)
         
-        arcade.draw_ellipse_filled(left_x, y, eye_width, eye_height, arcade.color.WHITE)
-        arcade.draw_ellipse_filled(right_x, y, eye_width, eye_height, arcade.color.WHITE)
+        arcade.draw_ellipse_filled(left_x, y, eye_width, eye_height, white_with_alpha)
+        arcade.draw_ellipse_filled(right_x, y, eye_width, eye_height, white_with_alpha)
     
-    def _draw_closed_eyes(self, left_x, right_x, y, face_size):
+    def _draw_closed_eyes(self, left_x, right_x, y, face_size, alpha=255):
         """Draw closed eyes (horizontal lines)"""
         eye_width = face_size * 0.15
+        white_with_alpha = (255, 255, 255, alpha)
         
         arcade.draw_line(
             left_x - eye_width/2, y,
             left_x + eye_width/2, y,
-            arcade.color.WHITE, 2
+            white_with_alpha, 2
         )
         arcade.draw_line(
             right_x - eye_width/2, y,
             right_x + eye_width/2, y,
-            arcade.color.WHITE, 2
+            white_with_alpha, 2
         )
     
     # Animation functions for each emotion
     
-    def _animate_neutral_face(self, x, y, width, height, frame):
+    def _animate_neutral_face(self, x, y, width, height, frame, alpha=255):
         """Draw the neutral face with animation"""
         center_x = x + width/2
         center_y = y + height/2
         face_size = min(width, height) * 0.8
+        white_with_alpha = (255, 255, 255, alpha)
         
         # Draw eyes
         eye_y = center_y + face_size * 0.1
@@ -225,13 +293,13 @@ class EmotionDisplay:
         
         # Handle blinking in the animation
         if frame == 3:  # Half-closed eyes
-            self._draw_half_closed_eyes(left_eye_x, right_eye_x, eye_y, face_size)
+            self._draw_half_closed_eyes(left_eye_x, right_eye_x, eye_y, face_size, alpha)
         elif frame == 4:  # Fully closed eyes
-            self._draw_closed_eyes(left_eye_x, right_eye_x, eye_y, face_size)
+            self._draw_closed_eyes(left_eye_x, right_eye_x, eye_y, face_size, alpha)
         elif frame == 5:  # Half-closed eyes again
-            self._draw_half_closed_eyes(left_eye_x, right_eye_x, eye_y, face_size)
+            self._draw_half_closed_eyes(left_eye_x, right_eye_x, eye_y, face_size, alpha)
         else:  # Normal open eyes
-            self._draw_open_eyes(left_eye_x, right_eye_x, eye_y, face_size)
+            self._draw_open_eyes(left_eye_x, right_eye_x, eye_y, face_size, alpha)
         
         # Draw straight mouth
         mouth_y = center_y - face_size * 0.15
@@ -240,15 +308,16 @@ class EmotionDisplay:
         arcade.draw_line(
             center_x - mouth_width/2, mouth_y,
             center_x + mouth_width/2, mouth_y,
-            arcade.color.WHITE,
+            white_with_alpha,
             3
         )
     
-    def _animate_happy_face(self, x, y, width, height, frame):
+    def _animate_happy_face(self, x, y, width, height, frame, alpha=255):
         """Draw an improved happy face with organic animation"""
         center_x = x + width/2
         center_y = y + height/2
         face_size = min(width, height) * 0.8
+        white_with_alpha = (255, 255, 255, alpha)
         
         # Add subtle bouncy movement
         bounce = math.sin(self.animation_time * 3) * 2
@@ -262,13 +331,13 @@ class EmotionDisplay:
         # Blinking in animation
         if frame in [3, 4, 5]:
             if frame == 3:
-                self._draw_half_closed_eyes(left_eye_x, right_eye_x, eye_y, face_size)
+                self._draw_half_closed_eyes(left_eye_x, right_eye_x, eye_y, face_size, alpha)
             elif frame == 4:
-                self._draw_closed_eyes(left_eye_x, right_eye_x, eye_y, face_size)
+                self._draw_closed_eyes(left_eye_x, right_eye_x, eye_y, face_size, alpha)
             elif frame == 5:
-                self._draw_half_closed_eyes(left_eye_x, right_eye_x, eye_y, face_size)
+                self._draw_half_closed_eyes(left_eye_x, right_eye_x, eye_y, face_size, alpha)
         else:
-            self._draw_open_eyes(left_eye_x, right_eye_x, eye_y, face_size)
+            self._draw_open_eyes(left_eye_x, right_eye_x, eye_y, face_size, alpha)
         
         # Draw smile - FIXED positioning for proper smile shape
         smile_y = center_y - face_size * 0.15  # Position slightly lower
@@ -282,7 +351,7 @@ class EmotionDisplay:
         arcade.draw_arc_outline(
             center_x, smile_y,
             smile_width, smile_height,
-            arcade.color.WHITE,
+            white_with_alpha,
             start_angle, end_angle,
             3
         )
@@ -294,16 +363,17 @@ class EmotionDisplay:
         arcade.draw_arc_outline(
             center_x, smile_y - smile_height * 0.1,
             inner_width, inner_height,
-            arcade.color.WHITE,
+            white_with_alpha,
             start_angle, end_angle,
             2
         )
     
-    def _animate_sad_face(self, x, y, width, height, frame):
+    def _animate_sad_face(self, x, y, width, height, frame, alpha=255):
         """Draw the sad face with animation"""
         center_x = x + width/2
         center_y = y + height/2
         face_size = min(width, height) * 0.8
+        white_with_alpha = (255, 255, 255, alpha)
         
         # Draw eyes (droopy or blinking)
         eye_y = center_y + face_size * 0.1
@@ -313,15 +383,15 @@ class EmotionDisplay:
         if frame in [2, 3]:
             # Blinking sequence
             if frame == 2:
-                self._draw_half_closed_eyes(left_eye_x, right_eye_x, eye_y, face_size)
+                self._draw_half_closed_eyes(left_eye_x, right_eye_x, eye_y, face_size, alpha)
             else:
-                self._draw_closed_eyes(left_eye_x, right_eye_x, eye_y, face_size)
+                self._draw_closed_eyes(left_eye_x, right_eye_x, eye_y, face_size, alpha)
         else:
             # Droopy eyes
             eye_size = face_size * 0.1
             
-            arcade.draw_circle_filled(left_eye_x, eye_y - eye_size/2, eye_size, arcade.color.WHITE)
-            arcade.draw_circle_filled(right_eye_x, eye_y - eye_size/2, eye_size, arcade.color.WHITE)
+            arcade.draw_circle_filled(left_eye_x, eye_y - eye_size/2, eye_size, white_with_alpha)
+            arcade.draw_circle_filled(right_eye_x, eye_y - eye_size/2, eye_size, white_with_alpha)
         
         # Draw frown - sad downward curve with slight animation
         frown_y = center_y - face_size * 0.2
@@ -332,16 +402,17 @@ class EmotionDisplay:
         arcade.draw_arc_outline(
             center_x, frown_y + frown_height,
             frown_width, frown_height,
-            arcade.color.WHITE,
+            white_with_alpha,
             180, 360,
             3
         )
     
-    def _animate_sleepy_face(self, x, y, width, height, frame):
+    def _animate_sleepy_face(self, x, y, width, height, frame, alpha=255):
         """Draw the sleepy face with animation"""
         center_x = x + width/2
         center_y = y + height/2
         face_size = min(width, height) * 0.8
+        white_with_alpha = (255, 255, 255, alpha)
         
         # Draw eyes (mostly closed for sleepy look)
         eye_y = center_y + face_size * 0.1
@@ -353,13 +424,13 @@ class EmotionDisplay:
         arcade.draw_line(
             left_eye_x - eye_width/2, eye_y,
             left_eye_x + eye_width/2, eye_y,
-            arcade.color.WHITE,
+            white_with_alpha,
             2
         )
         arcade.draw_line(
             right_eye_x - eye_width/2, eye_y,
             right_eye_x + eye_width/2, eye_y,
-            arcade.color.WHITE,
+            white_with_alpha,
             2
         )
         
@@ -372,7 +443,7 @@ class EmotionDisplay:
             # First Z
             arcade.draw_text(
                 "z", z_x, z_y,
-                arcade.color.WHITE,
+                white_with_alpha,
                 z_size
             )
             
@@ -380,7 +451,7 @@ class EmotionDisplay:
             if frame >= 4:
                 arcade.draw_text(
                     "z", z_x - z_size, z_y + z_size * 1.2,
-                    arcade.color.WHITE,
+                    white_with_alpha,
                     z_size * 0.8
                 )
         
@@ -394,7 +465,7 @@ class EmotionDisplay:
             arcade.draw_ellipse_outline(
                 center_x, mouth_y,
                 mouth_width, mouth_height,
-                arcade.color.WHITE,
+                white_with_alpha,
                 2
             )
         else:
@@ -402,11 +473,11 @@ class EmotionDisplay:
             arcade.draw_ellipse_outline(
                 center_x, mouth_y,
                 mouth_width, mouth_width * 0.4,
-                arcade.color.WHITE,
+                white_with_alpha,
                 2
             )
     
-    def _animate_excited_face(self, x, y, width, height, frame):
+    def _animate_excited_face(self, x, y, width, height, frame, alpha=255):
         """Draw an improved excited face with bouncy animation"""
         # Apply a bounce effect to the whole face
         bounce_offset = math.sin(self.animation_time * 5) * 3
@@ -414,6 +485,7 @@ class EmotionDisplay:
         center_x = x + width/2
         center_y = y + height/2 + bounce_offset
         face_size = min(width, height) * 0.8
+        white_with_alpha = (255, 255, 255, alpha)
         
         # Draw wide eyes with pupils
         eye_y = center_y + face_size * 0.1
@@ -423,11 +495,11 @@ class EmotionDisplay:
         
         # Brief blink at frame 4
         if frame == 4:
-            self._draw_closed_eyes(left_eye_x, right_eye_x, eye_y, face_size)
+            self._draw_closed_eyes(left_eye_x, right_eye_x, eye_y, face_size, alpha)
         else:
             # Draw wide eyes with pupils
-            arcade.draw_circle_filled(left_eye_x, eye_y, eye_size, arcade.color.WHITE)
-            arcade.draw_circle_filled(right_eye_x, eye_y, eye_size, arcade.color.WHITE)
+            arcade.draw_circle_filled(left_eye_x, eye_y, eye_size, white_with_alpha)
+            arcade.draw_circle_filled(right_eye_x, eye_y, eye_size, white_with_alpha)
             
             # Pupils
             pupil_size = eye_size * 0.5
@@ -446,7 +518,7 @@ class EmotionDisplay:
         arcade.draw_arc_outline(
             center_x, smile_y,
             smile_width, smile_height,
-            arcade.color.WHITE,
+            white_with_alpha,
             start_angle, end_angle,
             3
         )
@@ -458,12 +530,12 @@ class EmotionDisplay:
         arcade.draw_arc_outline(
             center_x, smile_y - smile_height * 0.1,  # Slightly lower for depth
             inner_width, inner_height,
-            arcade.color.WHITE,
+            white_with_alpha,
             start_angle, end_angle,
             2
         )
     
-    def _animate_curious_face(self, x, y, width, height, frame):
+    def _animate_curious_face(self, x, y, width, height, frame, alpha=255):
         """Draw a curious face with animation"""
         # Apply a slight head tilt based on frame
         tilt = 0
@@ -475,6 +547,7 @@ class EmotionDisplay:
         center_x = x + width/2
         center_y = y + height/2
         face_size = min(width, height) * 0.8
+        white_with_alpha = (255, 255, 255, alpha)
         
         # Draw eyes (one eyebrow raised)
         eye_y = center_y + face_size * 0.1
@@ -490,17 +563,17 @@ class EmotionDisplay:
             arcade.draw_ellipse_filled(
                 left_eye_x, eye_y,
                 eye_width, eye_size * 0.7,
-                arcade.color.WHITE
+                white_with_alpha
             )
             arcade.draw_ellipse_filled(
                 right_eye_x, eye_y,
                 eye_width, eye_size * 0.7,
-                arcade.color.WHITE
+                white_with_alpha
             )
         else:
             # Normal eyes
-            arcade.draw_circle_filled(left_eye_x, eye_y, eye_size, arcade.color.WHITE)
-            arcade.draw_circle_filled(right_eye_x, eye_y, eye_size, arcade.color.WHITE)
+            arcade.draw_circle_filled(left_eye_x, eye_y, eye_size, white_with_alpha)
+            arcade.draw_circle_filled(right_eye_x, eye_y, eye_size, white_with_alpha)
         
         # Draw raised eyebrow (tilts slightly based on frame)
         brow_width = face_size * 0.18
@@ -510,7 +583,7 @@ class EmotionDisplay:
         arcade.draw_line(
             left_eye_x - brow_width/2, left_brow_y - face_size * 0.02 - tilt/50,
             left_eye_x + brow_width/2, left_brow_y + brow_tilt + tilt/50,
-            arcade.color.WHITE,
+            white_with_alpha,
             2
         )
         
@@ -521,11 +594,11 @@ class EmotionDisplay:
         arcade.draw_circle_outline(
             center_x, mouth_y,
             mouth_size,
-            arcade.color.WHITE,
+            white_with_alpha,
             2
         )
     
-    def _animate_scared_face(self, x, y, width, height, frame):
+    def _animate_scared_face(self, x, y, width, height, frame, alpha=255):
         """Draw a scared face with trembling animation"""
         # Apply a trembling effect
         tremble = 0
@@ -541,6 +614,7 @@ class EmotionDisplay:
         center_x = x + width/2 + tremble
         center_y = y + height/2
         face_size = min(width, height) * 0.8
+        white_with_alpha = (255, 255, 255, alpha)
         
         # Draw wide, scared eyes
         eye_y = center_y + face_size * 0.1
@@ -548,8 +622,8 @@ class EmotionDisplay:
         right_eye_x = center_x + face_size * 0.2
         eye_size = face_size * 0.15  # Bigger eyes for fear
         
-        arcade.draw_circle_filled(left_eye_x, eye_y, eye_size, arcade.color.WHITE)
-        arcade.draw_circle_filled(right_eye_x, eye_y, eye_size, arcade.color.WHITE)
+        arcade.draw_circle_filled(left_eye_x, eye_y, eye_size, white_with_alpha)
+        arcade.draw_circle_filled(right_eye_x, eye_y, eye_size, white_with_alpha)
         
         # Draw pupils (bigger for scared look)
         pupil_size = eye_size * 0.6
@@ -568,15 +642,16 @@ class EmotionDisplay:
         arcade.draw_ellipse_outline(
             center_x, mouth_y,
             mouth_width, mouth_height,
-            arcade.color.WHITE,
+            white_with_alpha,
             3
         )
     
-    def _animate_playful_face(self, x, y, width, height, frame):
+    def _animate_playful_face(self, x, y, width, height, frame, alpha=255):
         """Draw a playful face with winking animation"""
         center_x = x + width/2
         center_y = y + height/2
         face_size = min(width, height) * 0.8
+        white_with_alpha = (255, 255, 255, alpha)
         
         # Draw left eye (always open)
         eye_y = center_y + face_size * 0.1
@@ -584,7 +659,7 @@ class EmotionDisplay:
         right_eye_x = center_x + face_size * 0.2
         eye_size = face_size * 0.12
         
-        arcade.draw_circle_filled(left_eye_x, eye_y, eye_size, arcade.color.WHITE)
+        arcade.draw_circle_filled(left_eye_x, eye_y, eye_size, white_with_alpha)
         
         # Right eye alternates between wink and open
         if frame in [0, 1, 2, 3, 5]:
@@ -592,12 +667,12 @@ class EmotionDisplay:
             arcade.draw_line(
                 right_eye_x - eye_size, eye_y,
                 right_eye_x + eye_size, eye_y,
-                arcade.color.WHITE,
+                white_with_alpha,
                 2
             )
         else:
             # Open eye briefly in the animation
-            arcade.draw_circle_filled(right_eye_x, eye_y, eye_size, arcade.color.WHITE)
+            arcade.draw_circle_filled(right_eye_x, eye_y, eye_size, white_with_alpha)
         
         # Draw smile or tongue out depending on frame
         smile_y = center_y - face_size * 0.1
@@ -614,7 +689,7 @@ class EmotionDisplay:
             arcade.draw_arc_outline(
                 center_x, smile_y,
                 smile_width, smile_height,
-                arcade.color.WHITE,
+                white_with_alpha,
                 start_angle, end_angle,
                 3
             )
@@ -625,23 +700,24 @@ class EmotionDisplay:
             arcade.draw_ellipse_filled(
                 center_x, smile_y - smile_height * 0.2,
                 tongue_width, tongue_height,
-                arcade.color.WHITE
+                white_with_alpha
             )
         else:
             # Regular smile
             arcade.draw_arc_outline(
                 center_x, smile_y,
                 smile_width, smile_height,
-                arcade.color.WHITE,
+                white_with_alpha,
                 start_angle, end_angle,
                 3
             )
     
-    def _animate_grumpy_face(self, x, y, width, height, frame):
+    def _animate_grumpy_face(self, x, y, width, height, frame, alpha=255):
         """Draw a grumpy face with furrowed brow animation"""
         center_x = x + width/2
         center_y = y + height/2
         face_size = min(width, height) * 0.8
+        white_with_alpha = (255, 255, 255, alpha)
         
         # Eyes position
         eye_y = center_y + face_size * 0.1
@@ -655,13 +731,13 @@ class EmotionDisplay:
             arcade.draw_line(
                 left_eye_x - eye_width/2, eye_y,
                 left_eye_x + eye_width/2, eye_y,
-                arcade.color.WHITE,
+                white_with_alpha,
                 2
             )
             arcade.draw_line(
                 right_eye_x - eye_width/2, eye_y,
                 right_eye_x + eye_width/2, eye_y,
-                arcade.color.WHITE,
+                white_with_alpha,
                 2
             )
         else:
@@ -670,12 +746,12 @@ class EmotionDisplay:
             arcade.draw_ellipse_filled(
                 left_eye_x, eye_y,
                 eye_width, eye_height,
-                arcade.color.WHITE
+                white_with_alpha
             )
             arcade.draw_ellipse_filled(
                 right_eye_x, eye_y,
                 eye_width, eye_height,
-                arcade.color.WHITE
+                white_with_alpha
             )
         
         # Draw eyebrows - furrow level increases with frame 2
@@ -685,7 +761,7 @@ class EmotionDisplay:
         arcade.draw_line(
             left_eye_x - eye_width/2, eye_y + face_size * brow_furrow,
             left_eye_x + eye_width/2, eye_y + face_size * 0.02,
-            arcade.color.WHITE,
+            white_with_alpha,
             2
         )
         
@@ -693,7 +769,7 @@ class EmotionDisplay:
         arcade.draw_line(
             right_eye_x - eye_width/2, eye_y + face_size * 0.02,
             right_eye_x + eye_width/2, eye_y + face_size * brow_furrow,
-            arcade.color.WHITE,
+            white_with_alpha,
             2
         )
         
@@ -705,6 +781,6 @@ class EmotionDisplay:
         arcade.draw_line(
             center_x - mouth_width/2, mouth_y,
             center_x + mouth_width/2, mouth_y - frown_depth,
-            arcade.color.WHITE,
+            white_with_alpha,
             3
         )
