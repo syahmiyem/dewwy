@@ -1,304 +1,309 @@
-// Include the other Arduino files
-#include "../sensor_module/ultrasonic_sensor.ino"
-#include "../motor_control/motor_control.ino"
+/**
+ * Main Arduino sketch for Dewwy Pet Robot
+ * This handles hardware communication between Raspberry Pi and physical components
+ */
 
-// Define constants
-#define MOTOR_SPEED 150      // Speed from 0-255
-#define OBSTACLE_DISTANCE 20 // Distance in cm
-#define SERIAL_BAUD 9600     // Serial baud rate
-#define AVOIDANCE_BACKUP_TIME 300    // ms to back up from obstacle
-#define AVOIDANCE_TURN_TIME 700     // ms to turn away from obstacle
-#define AVOIDANCE_FORWARD_TIME 500  // ms to move forward after turning
+#include <Wire.h>
+#include <Servo.h>
+
+// Pin Definitions - Using Sensor Shield V5 mapping
+// Motor control pins
+#define LEFT_MOTOR_PWM 5
+#define LEFT_MOTOR_DIR1 4
+#define LEFT_MOTOR_DIR2 3
+#define RIGHT_MOTOR_PWM 6
+#define RIGHT_MOTOR_DIR1 7
+#define RIGHT_MOTOR_DIR2 8
+
+// Sensor pins
+#define TRIG_PIN 12  // Ultrasonic trigger pin
+#define ECHO_PIN 11  // Ultrasonic echo pin
+#define SERVO_PIN 9  // Servo control pin
+
+// Optional pins
+#define BATTERY_PIN A3  // Battery monitoring
 
 // Serial communication
-String inputString = "";
-boolean stringComplete = false;
+#define BAUD_RATE 115200
+#define TX_INTERVAL 50  // Minimum time between transmissions (ms)
 
-// Operating mode
-enum OperatingMode {
-  AUTO_MODE,     // Autonomous operation
-  COMMAND_MODE   // Remote controlled
-};
+// Constants
+#define MAX_COMMAND_LENGTH 32
+#define SCAN_MIN_ANGLE 0
+#define SCAN_MAX_ANGLE 180
+#define SCAN_STEP 15
+#define SCAN_DELAY 50
 
-// Robot movement state for avoidance maneuver
-enum AvoidanceState {
-  NONE,          // No avoidance in progress
-  BACKING_UP,    // Step 1: Moving backward
-  TURNING,       // Step 2: Turning away from obstacle
-  MOVING_FORWARD // Step 3: Moving forward in new direction
-};
+// Global variables
+unsigned long lastTxTime = 0;
+unsigned long lastDistance = 0;
+char command[MAX_COMMAND_LENGTH];
+int commandIndex = 0;
+int distance = 0;
+int currentServoAngle = 90;  // Default to center position
+boolean isScanning = false;
 
-OperatingMode currentMode = COMMAND_MODE; // Default to command mode
-AvoidanceState avoidanceState = NONE;     // Current avoidance maneuver state
+// Objects
+Servo scanServo;
 
-// Timing variables
-unsigned long lastDistanceUpdate = 0;
-const unsigned long distanceUpdateInterval = 200; // 200ms between distance updates
-unsigned long avoidanceStartTime = 0;         // When current avoidance step started
-unsigned long lastStuckCheckTime = 0;         // For stuck detection
-unsigned long lastPositionChangeTime = 0;     // For stuck detection
-
-// Avoidance parameters
-boolean turningDirection = true;    // true = left, false = right
-int stuckCount = 0;                 // How many times robot has been stuck
-int previousDistance = 100;         // Previously measured distance
-int sameDistanceCount = 0;          // Count of repeated similar distance readings
-
+// Setup function
 void setup() {
-  Serial.begin(SERIAL_BAUD);
-  setup_ultrasonic();
-  setup_motors();
+  // Initialize Serial
+  Serial.begin(BAUD_RATE);
   
-  // Wait for serial port to connect
-  delay(500);
+  // Initialize motor pins
+  pinMode(LEFT_MOTOR_PWM, OUTPUT);
+  pinMode(LEFT_MOTOR_DIR1, OUTPUT);
+  pinMode(LEFT_MOTOR_DIR2, OUTPUT);
+  pinMode(RIGHT_MOTOR_PWM, OUTPUT);
+  pinMode(RIGHT_MOTOR_DIR1, OUTPUT);
+  pinMode(RIGHT_MOTOR_DIR2, OUTPUT);
   
-  // Reserve memory for input string
-  inputString.reserve(200);
+  // Initialize ultrasonic sensor pins
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
   
-  // Initialize timing variables
-  lastStuckCheckTime = millis();
-  lastPositionChangeTime = millis();
+  // Initialize servo
+  scanServo.attach(SERVO_PIN);
+  scanServo.write(currentServoAngle); // Center position
   
-  // Send initial status message
-  Serial.println("ROBOT:READY");
+  // Stop motors on startup (safety)
+  stopMotors();
+  
+  // Send startup message after a brief delay
+  delay(1000);
+  Serial.println("ARDUINO:READY");
 }
 
+// Main loop
 void loop() {
-  // Update current time
-  unsigned long currentMillis = millis();
-  
-  // Regularly measure and send distance
-  if (currentMillis - lastDistanceUpdate > distanceUpdateInterval) {
-    int distance = measure_distance();
-    Serial.print("DIST:");
-    Serial.println(distance);
-    lastDistanceUpdate = currentMillis;
-    
-    // In auto mode, handle obstacle avoidance
-    if (currentMode == AUTO_MODE) {
-      handleAutonomousBehavior(distance);
-      checkForStuckCondition(distance);
-    }
-  }
-  
   // Process any incoming commands
-  if (stringComplete) {
-    processCommand(inputString);
-    inputString = "";
-    stringComplete = false;
-  }
+  processSerial();
   
-  // Process any bytes from serial port
-  while (Serial.available()) {
-    char inChar = (char)Serial.read();
-    inputString += inChar;
-    if (inChar == '\n') {
-      stringComplete = true;
-      break;
+  // Read distance sensor
+  if (millis() - lastDistance > 100) {  // Every 100ms
+    distance = readDistance();
+    lastDistance = millis();
+    
+    // Only send if it's been at least TX_INTERVAL ms since last transmission
+    if (millis() - lastTxTime > TX_INTERVAL) {
+      sendDistanceReading(distance);
+      lastTxTime = millis();
     }
   }
 }
 
-void processCommand(String command) {
-  command.trim();  // Remove newline and any whitespace
-  
+// Read serial for commands
+void processSerial() {
+  while (Serial.available() > 0) {
+    char c = Serial.read();
+    
+    // Check for end of command
+    if (c == '\n' || c == '\r') {
+      if (commandIndex > 0) {
+        command[commandIndex] = '\0';  // Null terminate
+        executeCommand(command);
+        commandIndex = 0;  // Reset for next command
+      }
+    } 
+    else if (commandIndex < MAX_COMMAND_LENGTH - 1) {
+      command[commandIndex++] = c;
+    }
+  }
+}
+
+// Execute a command from the Raspberry Pi
+void executeCommand(char* cmd) {
   // Motor commands
-  if (command == "FWD") {
-    move_forward(MOTOR_SPEED);
+  if (strcmp(cmd, "FWD") == 0) {
+    moveForward(255);
     Serial.println("ACK:FWD");
   } 
-  else if (command == "BCK") {
-    move_backward(MOTOR_SPEED);
+  else if (strncmp(cmd, "FWD:", 4) == 0) {
+    int speed = atoi(cmd + 4);
+    moveForward(speed);
+    Serial.println("ACK:FWD");
+  }
+  else if (strcmp(cmd, "BCK") == 0) {
+    moveBackward(255);
     Serial.println("ACK:BCK");
   }
-  else if (command == "LFT") {
-    turn_left(MOTOR_SPEED);
+  else if (strncmp(cmd, "BCK:", 4) == 0) {
+    int speed = atoi(cmd + 4);
+    moveBackward(speed);
+    Serial.println("ACK:BCK");
+  }
+  else if (strcmp(cmd, "LFT") == 0) {
+    turnLeft(255);
     Serial.println("ACK:LFT");
   }
-  else if (command == "RGT") {
-    turn_right(MOTOR_SPEED);
+  else if (strncmp(cmd, "LFT:", 4) == 0) {
+    int speed = atoi(cmd + 4);
+    turnLeft(speed);
+    Serial.println("ACK:LFT");
+  }
+  else if (strcmp(cmd, "RGT") == 0) {
+    turnRight(255);
     Serial.println("ACK:RGT");
   }
-  else if (command == "STP") {
-    stop_motors();
+  else if (strncmp(cmd, "RGT:", 4) == 0) {
+    int speed = atoi(cmd + 4);
+    turnRight(speed);
+    Serial.println("ACK:RGT");
+  }
+  else if (strcmp(cmd, "STP") == 0) {
+    stopMotors();
     Serial.println("ACK:STP");
   }
-  // Mode commands
-  else if (command == "AUTO") {
-    currentMode = AUTO_MODE;
-    Serial.println("MODE:AUTO");
+  
+  // Servo control commands
+  else if (strncmp(cmd, "SRV:", 4) == 0) {
+    int angle = atoi(cmd + 4);
+    setServoAngle(angle);
+    Serial.println("ACK:SRV");
   }
-  else if (command == "CMD") {
-    currentMode = COMMAND_MODE;
-    Serial.println("MODE:CMD");
+  else if (strcmp(cmd, "SCAN") == 0) {
+    performScan();
+    Serial.println("ACK:SCAN");
   }
-  // Info commands
-  else if (command == "PING") {
+  
+  // System commands
+  else if (strcmp(cmd, "PING") == 0) {
     Serial.println("PONG");
   }
-  else if (command == "STATUS") {
-    sendStatusInfo();
+  else if (strcmp(cmd, "BAT") == 0) {
+    sendBatteryLevel();
   }
   else {
-    Serial.println("ERR:UNKNOWN_COMMAND");
+    Serial.print("ERR:UNKNOWN_CMD:");
+    Serial.println(cmd);
   }
 }
 
-void sendStatusInfo() {
-  Serial.println("STATUS:BEGIN");
+// Motor control functions
+void moveForward(int speed) {
+  speed = constrain(speed, 0, 255);
   
-  // Send current mode
-  Serial.print("MODE:");
-  Serial.println(currentMode == AUTO_MODE ? "AUTO" : "CMD");
+  digitalWrite(LEFT_MOTOR_DIR1, HIGH);
+  digitalWrite(LEFT_MOTOR_DIR2, LOW);
+  analogWrite(LEFT_MOTOR_PWM, speed);
   
-  // Send distance
+  digitalWrite(RIGHT_MOTOR_DIR1, HIGH);
+  digitalWrite(RIGHT_MOTOR_DIR2, LOW);
+  analogWrite(RIGHT_MOTOR_PWM, speed);
+}
+
+void moveBackward(int speed) {
+  speed = constrain(speed, 0, 255);
+  
+  digitalWrite(LEFT_MOTOR_DIR1, LOW);
+  digitalWrite(LEFT_MOTOR_DIR2, HIGH);
+  analogWrite(LEFT_MOTOR_PWM, speed);
+  
+  digitalWrite(RIGHT_MOTOR_DIR1, LOW);
+  digitalWrite(RIGHT_MOTOR_DIR2, HIGH);
+  analogWrite(RIGHT_MOTOR_PWM, speed);
+}
+
+void turnLeft(int speed) {
+  speed = constrain(speed, 0, 255);
+  
+  digitalWrite(LEFT_MOTOR_DIR1, LOW);
+  digitalWrite(LEFT_MOTOR_DIR2, HIGH);
+  analogWrite(LEFT_MOTOR_PWM, speed);
+  
+  digitalWrite(RIGHT_MOTOR_DIR1, HIGH);
+  digitalWrite(RIGHT_MOTOR_DIR2, LOW);
+  analogWrite(RIGHT_MOTOR_PWM, speed);
+}
+
+void turnRight(int speed) {
+  speed = constrain(speed, 0, 255);
+  
+  digitalWrite(LEFT_MOTOR_DIR1, HIGH);
+  digitalWrite(LEFT_MOTOR_DIR2, LOW);
+  analogWrite(LEFT_MOTOR_PWM, speed);
+  
+  digitalWrite(RIGHT_MOTOR_DIR1, LOW);
+  digitalWrite(RIGHT_MOTOR_DIR2, HIGH);
+  analogWrite(RIGHT_MOTOR_PWM, speed);
+}
+
+void stopMotors() {
+  digitalWrite(LEFT_MOTOR_DIR1, LOW);
+  digitalWrite(LEFT_MOTOR_DIR2, LOW);
+  analogWrite(LEFT_MOTOR_PWM, 0);
+  
+  digitalWrite(RIGHT_MOTOR_DIR1, LOW);
+  digitalWrite(RIGHT_MOTOR_DIR2, LOW);
+  analogWrite(RIGHT_MOTOR_PWM, 0);
+}
+
+// Distance sensor functions
+int readDistance() {
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+  
+  long duration = pulseIn(ECHO_PIN, HIGH);
+  int dist = duration * 0.034 / 2;  // Convert to cm
+  
+  return constrain(dist, 0, 400);  // HC-SR04 has max range of ~400cm
+}
+
+// Servo control functions
+void setServoAngle(int angle) {
+  angle = constrain(angle, SCAN_MIN_ANGLE, SCAN_MAX_ANGLE);
+  scanServo.write(angle);
+  currentServoAngle = angle;
+}
+
+// Perform a full area scan with the servo and ultrasonic sensor
+void performScan() {
+  isScanning = true;
+  
+  // First move to starting position
+  setServoAngle(SCAN_MIN_ANGLE);
+  delay(SCAN_DELAY * 2);  // Extra delay for initial positioning
+  
+  // Scan from left to right
+  for (int angle = SCAN_MIN_ANGLE; angle <= SCAN_MAX_ANGLE; angle += SCAN_STEP) {
+    setServoAngle(angle);
+    delay(SCAN_DELAY);
+    
+    // Measure distance at this angle
+    int dist = readDistance();
+    
+    // Send scan data to Pi
+    Serial.print("SCAN:");
+    Serial.print(angle);
+    Serial.print(":");
+    Serial.println(dist);
+  }
+  
+  // Return to center position
+  setServoAngle(90);
+  
+  // Send end of scan marker
+  Serial.println("SCAN:END");
+  isScanning = false;
+}
+
+// Send distance reading to the Raspberry Pi
+void sendDistanceReading(int dist) {
   Serial.print("DIST:");
-  Serial.println(measure_distance());
-  
-  // Send voltage if we had a sensor
-  Serial.println("VOLT:5.0");
-  
-  Serial.println("STATUS:END");
+  Serial.println(dist);
 }
 
-void handleAutonomousBehavior(int distance) {
-  // If currently executing an avoidance maneuver
-  if (avoidanceState != NONE) {
-    executeAvoidanceManeuver(distance);
-    return;
-  }
+// Send battery level to the Raspberry Pi
+void sendBatteryLevel() {
+  int batteryValue = analogRead(BATTERY_PIN);
+  // Map to a percentage (adjust these values based on your battery)
+  int batteryPercent = map(batteryValue, 614, 768, 0, 100);
+  batteryPercent = constrain(batteryPercent, 0, 100);
   
-  // Start a new avoidance maneuver if obstacle detected
-  if (distance < OBSTACLE_DISTANCE) {
-    startAvoidanceManeuver();
-  } else {
-    // No obstacles, move forward
-    move_forward(MOTOR_SPEED);
-  }
-}
-
-void startAvoidanceManeuver() {
-  // Begin the multi-step avoidance maneuver
-  avoidanceState = BACKING_UP;
-  avoidanceStartTime = millis();
-  
-  // Choose turn direction, alternating for better coverage
-  // But when stuck, maintain same direction for more extensive turn
-  if (stuckCount <= 0) {
-    turningDirection = !turningDirection; // Alternate direction
-  }
-  
-  // Send status
-  Serial.println("Starting avoidance maneuver");
-}
-
-void executeAvoidanceManeuver(int distance) {
-  unsigned long currentTime = millis();
-  unsigned long elapsedTime = currentTime - avoidanceStartTime;
-  
-  switch (avoidanceState) {
-    case BACKING_UP:
-      // Step 1: Back up to get away from the obstacle
-      move_backward(MOTOR_SPEED);
-      
-      // After backing up time, move to turning phase
-      if (elapsedTime > AVOIDANCE_BACKUP_TIME) {
-        avoidanceState = TURNING;
-        avoidanceStartTime = currentTime;
-      }
-      break;
-      
-    case TURNING:
-      // Step 2: Turn in the chosen direction
-      
-      // Calculate turn time based on stuck count (turns longer if stuck)
-      int turnTime = AVOIDANCE_TURN_TIME;
-      if (stuckCount > 0) {
-        // Increase turn amount by 30% for each stuck count up to triple
-        turnTime = min(AVOIDANCE_TURN_TIME * (1 + stuckCount * 0.3), AVOIDANCE_TURN_TIME * 3);
-      }
-      
-      // Execute turn based on selected direction
-      if (turningDirection) {
-        turn_left(MOTOR_SPEED);
-      } else {
-        turn_right(MOTOR_SPEED);
-      }
-      
-      // After turning time, move to forward phase
-      if (elapsedTime > turnTime) {
-        avoidanceState = MOVING_FORWARD;
-        avoidanceStartTime = currentTime;
-      }
-      break;
-      
-    case MOVING_FORWARD:
-      // Step 3: Move forward in new direction
-      move_forward(MOTOR_SPEED);
-      
-      // If we encounter another obstacle immediately, restart avoidance
-      if (distance < OBSTACLE_DISTANCE) {
-        startAvoidanceManeuver();
-        return;
-      }
-      
-      // After forward time, end the maneuver
-      if (elapsedTime > AVOIDANCE_FORWARD_TIME) {
-        avoidanceState = NONE;
-        Serial.println("Avoidance maneuver complete");
-      }
-      break;
-      
-    default:
-      // Should never get here, but just in case
-      avoidanceState = NONE;
-  }
-}
-
-void checkForStuckCondition(int distance) {
-  // Only check periodically (every 1 second)
-  unsigned long currentTime = millis();
-  if (currentTime - lastStuckCheckTime < 1000) {
-    return;
-  }
-  
-  lastStuckCheckTime = currentTime;
-  
-  // Check if distance is very similar to previous reading (±10%)
-  if (abs(distance - previousDistance) < (previousDistance * 0.1)) {
-    sameDistanceCount++;
-  } else {
-    sameDistanceCount = 0;
-    lastPositionChangeTime = currentTime;
-  }
-  
-  // If we've had similar readings for a while, consider robot stuck
-  if (sameDistanceCount >= 5) {
-    stuckCount++;
-    sameDistanceCount = 0;
-    
-    // If stuck, start a new avoidance maneuver
-    if (avoidanceState == NONE) {
-      Serial.println("Robot appears stuck, starting avoidance");
-      startAvoidanceManeuver();
-    }
-  } 
-  else if (currentTime - lastPositionChangeTime > 5000) {
-    // If position hasn't changed in 5 seconds, consider stuck
-    stuckCount++;
-    lastPositionChangeTime = currentTime;
-    
-    // If stuck, start a new avoidance maneuver
-    if (avoidanceState == NONE) {
-      Serial.println("Robot position unchanged, starting avoidance");
-      startAvoidanceManeuver();
-    }
-  }
-  else if (stuckCount > 0 && currentTime - lastPositionChangeTime > 10000) {
-    // If position has changed for a while, decrement stuck count
-    stuckCount = max(0, stuckCount - 1);
-  }
-  
-  // Store current distance for next comparison
-  previousDistance = distance;
+  Serial.print("BAT:");
+  Serial.println(batteryPercent);
 }

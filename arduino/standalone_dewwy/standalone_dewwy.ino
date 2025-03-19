@@ -113,6 +113,9 @@ void setup() {
   // Initialize ultrasonic sensor pins
   pinMode(TRIG_PIN, OUTPUT);
   pinMode(ECHO_PIN, INPUT);
+  
+  // Initialize servo for scanning
+  setupServo();
 }
 
 void loop() {
@@ -160,6 +163,9 @@ void loop() {
   
   // Always update the display
   updateDisplay();
+  
+  // Update scanner
+  updateScanner();
   
   // Small delay to prevent too frequent updates
   delay(20);
@@ -286,6 +292,9 @@ void processSerialCommands() {
       Serial.println("Autopilot disabled");
       stopMotors();  // Stop motors when disabling autopilot
     }
+    
+    // Process servo scan commands
+    processServoScanCommands(command);
   }
 }
 
@@ -356,20 +365,21 @@ void executeAvoidingState(unsigned long currentTime) {
 
   unsigned long stateElapsed = currentTime - stateStartTime;
   
-  // Modified obstacle avoidance sequence
+  // Modified obstacle avoidance sequence with scanning
   if (stateElapsed < 1000) {
     // Back up first
     moveBackward(180);
-  } else if (stateElapsed < 3000) {
-    // Then turn - choose direction based on multiple readings
-    if (stateElapsed == 1000) {  // Only do this once when we start turning
-      // Choose turn direction (simple algorithm - could be improved)
-      if (random(2) == 0) {
-        turnLeft(200);
-      } else {
-        turnRight(200);
-      }
+  } else if (stateElapsed < 2000) {
+    // Stop and scan the area
+    stopMotors();
+    
+    // Only perform the scan once when we enter this phase
+    if (stateElapsed < 1100) {
+      performScan();
     }
+  } else if (stateElapsed < 4000) {
+    // Turn toward the clearest path
+    turnTowardClearestPath();
   } else {
     // Check if path is clear before moving forward
     if (distance > 30) {
@@ -562,180 +572,228 @@ void drawBattery() {
   display.print("%");
 }
 
-// Face drawing functions - these implement the emotion display component functionality
+// Face drawing functions - enhanced to maximize screen usage
 void drawNeutralFace() {
-  // Center coordinates
+  // Center coordinates - use more of the screen vertically
   int x = SCREEN_WIDTH / 2;
-  int y = SCREEN_HEIGHT / 2;
+  int y = SCREEN_HEIGHT / 2 - 5; // Shifted up slightly to make room for status line
+  int eyeSize = 6; // Larger eyes
   
   // Eyes
-  int eyeY = y - 5;
+  int eyeY = y - 8;
+  int eyeDistance = 20; // More distance between eyes
+  
   if (!isBlinking) {
-    display.fillCircle(x - 15, eyeY, 5, SSD1306_WHITE);
-    display.fillCircle(x + 15, eyeY, 5, SSD1306_WHITE);
+    display.fillCircle(x - eyeDistance, eyeY, eyeSize, SSD1306_WHITE);
+    display.fillCircle(x + eyeDistance, eyeY, eyeSize, SSD1306_WHITE);
   } else {
-    display.drawFastHLine(x - 20, eyeY, 10, SSD1306_WHITE);
-    display.drawFastHLine(x + 10, eyeY, 10, SSD1306_WHITE);
+    display.drawFastHLine(x - eyeDistance - eyeSize, eyeY, eyeSize * 2, SSD1306_WHITE);
+    display.drawFastHLine(x + eyeDistance - eyeSize, eyeY, eyeSize * 2, SSD1306_WHITE);
   }
   
-  // Mouth - straight line
-  display.drawFastHLine(x - 15, y + 15, 30, SSD1306_WHITE);
+  // Mouth - straight line (wider)
+  display.drawFastHLine(x - 20, y + 15, 40, SSD1306_WHITE);
+  display.drawFastHLine(x - 20, y + 16, 40, SSD1306_WHITE); // Thicker mouth
 }
 
 void drawHappyFace() {
-  // Center coordinates
+  // Center coordinates - better screen usage
   int x = SCREEN_WIDTH / 2;
-  int y = SCREEN_HEIGHT / 2;
+  int y = SCREEN_HEIGHT / 2 - 5;
+  int eyeSize = 6;
   
   // Add subtle bouncy movement based on frame
   int bounce = animationFrame % 4;
   
   // Eyes
-  int eyeY = y - 5 - bounce;
+  int eyeY = y - 8 - bounce;
+  int eyeDistance = 20;
+  
   if (!isBlinking) {
-    display.fillCircle(x - 15, eyeY, 5, SSD1306_WHITE);
-    display.fillCircle(x + 15, eyeY, 5, SSD1306_WHITE);
+    display.fillCircle(x - eyeDistance, eyeY, eyeSize, SSD1306_WHITE);
+    display.fillCircle(x + eyeDistance, eyeY, eyeSize, SSD1306_WHITE);
   } else {
-    display.drawFastHLine(x - 20, eyeY, 10, SSD1306_WHITE);
-    display.drawFastHLine(x + 10, eyeY, 10, SSD1306_WHITE);
+    display.drawFastHLine(x - eyeDistance - eyeSize, eyeY, eyeSize * 2, SSD1306_WHITE);
+    display.drawFastHLine(x + eyeDistance - eyeSize, eyeY, eyeSize * 2, SSD1306_WHITE);
   }
   
-  // Smile 
-  for (int i = -15; i <= 15; i++) {
-    // Simple smile curve - adjust the formula as needed
-    int mouthY = y + 10 + (i * i) / 20;
+  // Smile - wider and more pronounced curve
+  for (int i = -25; i <= 25; i++) {
+    // Enhanced smile curve
+    int mouthY = y + 12 + (i * i) / 25;
     display.drawPixel(x + i, mouthY, SSD1306_WHITE);
+    display.drawPixel(x + i, mouthY + 1, SSD1306_WHITE); // Thicker line
   }
 }
 
 void drawSadFace() {
   // Center coordinates
   int x = SCREEN_WIDTH / 2;
-  int y = SCREEN_HEIGHT / 2;
+  int y = SCREEN_HEIGHT / 2 - 5;
+  int eyeSize = 6;
+  int eyeDistance = 20;
   
   // Eyes - droopy
-  int eyeY = y - 2;
+  int eyeY = y - 8;
   if (!isBlinking) {
-    display.fillCircle(x - 15, eyeY, 5, SSD1306_WHITE);
-    display.fillCircle(x + 15, eyeY, 5, SSD1306_WHITE);
+    // Sad eyes - angled slightly
+    display.fillCircle(x - eyeDistance, eyeY, eyeSize, SSD1306_WHITE);
+    display.fillCircle(x + eyeDistance, eyeY, eyeSize, SSD1306_WHITE);
+    
+    // Sad eyebrows
+    display.drawLine(x - eyeDistance - 6, eyeY - 6, x - eyeDistance + 4, eyeY - 8, SSD1306_WHITE);
+    display.drawLine(x + eyeDistance - 4, eyeY - 8, x + eyeDistance + 6, eyeY - 6, SSD1306_WHITE);
   } else {
-    display.drawFastHLine(x - 20, eyeY, 10, SSD1306_WHITE);
-    display.drawFastHLine(x + 10, eyeY, 10, SSD1306_WHITE);
+    display.drawFastHLine(x - eyeDistance - eyeSize, eyeY, eyeSize * 2, SSD1306_WHITE);
+    display.drawFastHLine(x + eyeDistance - eyeSize, eyeY, eyeSize * 2, SSD1306_WHITE);
   }
   
-  // Frown curve
-  for (int i = -15; i <= 15; i++) {
-    // Inverted curve for sad
-    int mouthY = y + 20 - (i * i) / 20;
+  // Frown curve - wider and more pronounced
+  for (int i = -25; i <= 25; i++) {
+    // Inverted curve for sad - deeper frown
+    int mouthY = y + 25 - (i * i) / 25;
     display.drawPixel(x + i, mouthY, SSD1306_WHITE);
+    display.drawPixel(x + i, mouthY + 1, SSD1306_WHITE); // Thicker line
   }
 }
 
 void drawExcitedFace() {
   // Center coordinates
   int x = SCREEN_WIDTH / 2;
-  int y = SCREEN_HEIGHT / 2;
+  int y = SCREEN_HEIGHT / 2 - 5;
   
   // Bouncy animation
   int bounce = (animationFrame % 6) - 3;
   y += bounce;
   
   // Larger eyes with pupils
-  int eyeY = y - 5;
+  int eyeY = y - 10;
+  int eyeDistance = 22;
+  int eyeSize = 9;
+  int pupilSize = 4;
+  
   if (!isBlinking) {
-    display.fillCircle(x - 15, eyeY, 7, SSD1306_WHITE);
-    display.fillCircle(x + 15, eyeY, 7, SSD1306_WHITE);
-    display.fillCircle(x - 15, eyeY, 3, SSD1306_BLACK);
-    display.fillCircle(x + 15, eyeY, 3, SSD1306_BLACK);
+    // Excited eyes - wide with pupils
+    display.fillCircle(x - eyeDistance, eyeY, eyeSize, SSD1306_WHITE);
+    display.fillCircle(x + eyeDistance, eyeY, eyeSize, SSD1306_WHITE);
+    display.fillCircle(x - eyeDistance, eyeY, pupilSize, SSD1306_BLACK);
+    display.fillCircle(x + eyeDistance, eyeY, pupilSize, SSD1306_BLACK);
   } else {
-    display.drawFastHLine(x - 20, eyeY, 10, SSD1306_WHITE);
-    display.drawFastHLine(x + 10, eyeY, 10, SSD1306_WHITE);
+    display.drawFastHLine(x - eyeDistance - eyeSize, eyeY, eyeSize * 2, SSD1306_WHITE);
+    display.drawFastHLine(x + eyeDistance - eyeSize, eyeY, eyeSize * 2, SSD1306_WHITE);
   }
   
-  // Wide excited smile
-  for (int i = -20; i <= 20; i++) {
+  // Wide excited smile - double thickness
+  for (int i = -30; i <= 30; i++) {
     // Wider, more curved smile
-    int mouthY = y + 12 + (i * i) / 30;
+    int mouthY = y + 15 + (i * i) / 30;
     display.drawPixel(x + i, mouthY, SSD1306_WHITE);
+    display.drawPixel(x + i, mouthY + 1, SSD1306_WHITE);
+    display.drawPixel(x + i, mouthY + 2, SSD1306_WHITE);
   }
 }
 
 void drawSleepyFace() {
   // Center coordinates
   int x = SCREEN_WIDTH / 2;
-  int y = SCREEN_HEIGHT / 2;
+  int y = SCREEN_HEIGHT / 2 - 5;
+  int eyeDistance = 20;
+  int eyeSize = 6;
   
   // Eyes are always closed or nearly closed
-  display.drawFastHLine(x - 20, y - 5, 10, SSD1306_WHITE);
-  display.drawFastHLine(x + 10, y - 5, 10, SSD1306_WHITE);
+  display.drawFastHLine(x - eyeDistance - eyeSize, y - 8, eyeSize * 2, SSD1306_WHITE);
+  display.drawFastHLine(x + eyeDistance - eyeSize, y - 8, eyeSize * 2, SSD1306_WHITE);
   
-  // Z's floating up
+  // Z's floating up - properly positioned inside the screen bounds
+  // Choose Z positions that will remain within screen
   if (animationFrame % 4 >= 2) {
-    display.setCursor(x + 20, y - 15);
+    // First Z - smaller and closer to face
+    display.setCursor(x + 15, y - 10);
+    display.setTextSize(1); // Small text
     display.print("z");
   }
   
   if (animationFrame % 6 >= 3) {
-    display.setCursor(x + 15, y - 25);
+    // Second Z - slightly larger, higher up
+    display.setCursor(x + 10, y - 20);
+    display.setTextSize(2); // Medium text
     display.print("z");
   }
   
   // Slightly open mouth (yawning occasionally)
   if (animationFrame % 8 >= 6) {
     // Yawning
-    display.fillCircle(x, y + 15, 8, SSD1306_WHITE);
-    display.fillCircle(x, y + 15, 6, SSD1306_BLACK);
+    display.fillCircle(x, y + 15, 10, SSD1306_WHITE);
+    display.fillCircle(x, y + 15, 8, SSD1306_BLACK);
   } else {
-    // Closed mouth
-    display.drawFastHLine(x - 10, y + 15, 20, SSD1306_WHITE);
+    // Closed mouth - slightly curved
+    display.drawFastHLine(x - 15, y + 15, 30, SSD1306_WHITE);
+    display.drawFastHLine(x - 10, y + 16, 20, SSD1306_WHITE);
   }
 }
 
 void drawCuriousFace() {
   // Center coordinates
   int x = SCREEN_WIDTH / 2;
-  int y = SCREEN_HEIGHT / 2;
+  int y = SCREEN_HEIGHT / 2 - 5;
+  int eyeDistance = 20;
+  int eyeSize = 7;
   
   // Head tilt effect - shift everything slightly
   int tilt = (animationFrame % 2) * 2;
   
-  // Eyes
-  int eyeY = y - 5;
+  // Eyes - one larger than the other for curious look
+  int eyeY = y - 8;
   if (!isBlinking) {
-    display.fillCircle(x - 15 + tilt, eyeY, 5, SSD1306_WHITE);
-    display.fillCircle(x + 15 + tilt, eyeY, 5, SSD1306_WHITE);
+    // Different sized eyes for curiosity
+    display.fillCircle(x - eyeDistance + tilt, eyeY, eyeSize - 1, SSD1306_WHITE);
+    display.fillCircle(x + eyeDistance + tilt, eyeY, eyeSize + 1, SSD1306_WHITE);
   } else {
-    display.drawFastHLine(x - 20 + tilt, eyeY, 10, SSD1306_WHITE);
-    display.drawFastHLine(x + 10 + tilt, eyeY, 10, SSD1306_WHITE);
+    display.drawFastHLine(x - eyeDistance - eyeSize + tilt, eyeY, eyeSize * 2, SSD1306_WHITE);
+    display.drawFastHLine(x + eyeDistance - eyeSize + tilt, eyeY, eyeSize * 2, SSD1306_WHITE);
   }
   
   // Raised eyebrow
-  display.drawLine(x - 20 + tilt, eyeY - 8, x - 10 + tilt, eyeY - 12, SSD1306_WHITE);
+  display.drawLine(x - eyeDistance - 8 + tilt, eyeY - 6, x - eyeDistance + 4 + tilt, eyeY - 10, SSD1306_WHITE);
+  display.drawLine(x - eyeDistance - 8 + tilt, eyeY - 5, x - eyeDistance + 4 + tilt, eyeY - 9, SSD1306_WHITE);
   
   // Small 'o' mouth
-  display.drawCircle(x + tilt, y + 15, 5, SSD1306_WHITE);
+  display.drawCircle(x + tilt, y + 15, 8, SSD1306_WHITE);
+  display.drawCircle(x + tilt, y + 15, 7, SSD1306_WHITE);
 }
 
 void drawScaredFace() {
   // Center coordinates
   int x = SCREEN_WIDTH / 2;
-  int y = SCREEN_HEIGHT / 2;
+  int y = SCREEN_HEIGHT / 2 - 5;
+  int eyeDistance = 22;
   
   // Trembling effect
   int tremble = (animationFrame % 2) * 2 - 1;
   x += tremble;
   
-  // Wide eyes
-  int eyeY = y - 5;
+  // Wide eyes - very large
+  int eyeY = y - 10;
+  int eyeSize = 10;
+  int pupilSize = 5;
+  
   if (!isBlinking) {
-    display.fillCircle(x - 15, eyeY, 7, SSD1306_WHITE);
-    display.fillCircle(x + 15, eyeY, 7, SSD1306_WHITE);
+    // Scared eyes - wide with pupils
+    display.fillCircle(x - eyeDistance, eyeY, eyeSize, SSD1306_WHITE);
+    display.fillCircle(x + eyeDistance, eyeY, eyeSize, SSD1306_WHITE);
+    // Pupils looking to the sides (fleeing)
+    display.fillCircle(x - eyeDistance - 3, eyeY, pupilSize, SSD1306_BLACK);
+    display.fillCircle(x + eyeDistance + 3, eyeY, pupilSize, SSD1306_BLACK);
   } else {
-    display.drawFastHLine(x - 20, eyeY, 10, SSD1306_WHITE);
-    display.drawFastHLine(x + 10, eyeY, 10, SSD1306_WHITE);
+    display.drawFastHLine(x - eyeDistance - eyeSize, eyeY, eyeSize * 2, SSD1306_WHITE);
+    display.drawFastHLine(x + eyeDistance - eyeSize, eyeY, eyeSize * 2, SSD1306_WHITE);
   }
   
-  // Open mouth (oval shape)
-  display.fillCircle(x, y + 15, 8, SSD1306_WHITE);
-  display.fillCircle(x, y + 15, 6, SSD1306_BLACK);
+  // Scared eyebrows
+  display.drawLine(x - eyeDistance - 8, eyeY - 10, x - eyeDistance + 8, eyeY - 14, SSD1306_WHITE);
+  display.drawLine(x + eyeDistance - 8, eyeY - 14, x + eyeDistance + 8, eyeY - 10, SSD1306_WHITE);
+  
+  // Open mouth (oval shape) - larger
+  display.fillCircle(x, y + 15, 12, SSD1306_WHITE);
+  display.fillCircle(x, y + 15, 10, SSD1306_BLACK);
 }

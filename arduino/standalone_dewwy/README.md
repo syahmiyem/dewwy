@@ -18,13 +18,19 @@ This standalone version is perfect for testing the robot's basic mechanics befor
 ## Hardware Requirements
 
 - Arduino UNO board
+- Sensor Shield V5 for Arduino UNO
 - 128x64 OLED display (I2C)
 - HC-SR04 ultrasonic distance sensor
 - Dual DC motors (and wheels)
 - Motor driver board (TB6612FNG or L298N)
-- Breadboard and jumper wires
+- SG90 servo motor (for radar scanning)
 - Battery pack (for motors)
 - Optional: Voltage regulator and power bank for Arduino
+- Optional: Small breadboard (for prototyping or additional components)
+
+### Why Use the Sensor Shield?
+
+The Sensor Shield V5 simplifies the wiring process by providing organized connections for all components. This reduces errors, creates a cleaner build, and makes the project more beginner-friendly. While not strictly necessary, it's highly recommended for a more reliable and professional result.
 
 ## Hardware Setup
 
@@ -50,7 +56,29 @@ Connect the ultrasonic sensor:
 | Echo        | Pin 11      |
 | GND         | GND         |
 
-### Step 3: Motor Driver Connection
+### Step 3: Servo and Ultrasonic Sensor Setup
+
+Mount the HC-SR04 ultrasonic sensor on the SG90 servo to create a radar-like scanning system:
+
+1. Attach the HC-SR04 sensor to the servo horn using hot glue or a small bracket
+2. Connect the servo to Arduino:
+
+| SG90 Pin | Sensor Shield/Arduino |
+|----------|----------------------|
+| Red (power)| 5V                 |
+| Brown (GND)| GND                |
+| Orange (signal)| Digital Pin 9  |
+
+Connect the ultrasonic sensor:
+
+| HC-SR04 Pin | Sensor Shield/Arduino |
+|-------------|----------------------|
+| VCC         | 5V                   |
+| Trig        | Digital Pin 12       |
+| Echo        | Digital Pin 11       |
+| GND         | GND                  |
+
+### Step 4: Motor Driver Connection
 
 For TB6612FNG motor driver:
 
@@ -71,17 +99,17 @@ For TB6612FNG motor driver:
 | B02           | -           | Right Motor -    |
 | STBY          | 5V          | Enable the driver|
 
-### Step 4: Battery Connections
+### Step 5: Battery Connections
 
 1. **Motor Power**: Connect a battery pack (4-6V recommended) to the VM and GND pins of the motor driver.
 2. **Arduino Power**: Either power the Arduino via USB during testing, or use a separate power bank/battery pack.
 
-### Step 5: Full Assembly
+### Step 6: Full Assembly
 
 1. Mount the OLED display in front of the robot (visible part)
-2. Mount the ultrasonic sensor facing forward
+2. Mount the servo at the front of the robot, with the ultrasonic sensor attached
 3. Attach motors to the wheels and chassis
-4. Secure the Arduino, breadboard, and batteries to the chassis
+4. Secure the Arduino, Sensor Shield, and batteries to the chassis
 
 ## Software Installation
 
@@ -137,6 +165,32 @@ You can control Dewwy manually using the Serial Monitor (Tools > Serial Monitor)
 - `AUTO_ON` - Enable autopilot mode
 - `AUTO_OFF` - Disable autopilot (manual control)
 
+## Features
+
+### Area Scanning
+
+Dewwy uses its servo-mounted ultrasonic sensor to scan the area in front of it:
+
+1. The servo rotates from 0° to 180° to create a radar-like scan
+2. Distance readings are taken at multiple angles
+3. The robot analyzes these readings to find the clearest path
+4. This significantly improves navigation compared to a fixed sensor
+
+### Basic Navigation Algorithm
+
+The scanning feature enables smarter navigation:
+- When an obstacle is detected, the robot scans the full range
+- It identifies the direction with the most open space
+- The robot then turns toward that direction and proceeds
+- This allows for more natural and efficient movement around obstacles
+
+### Enhanced Serial Commands
+
+Additional commands for the scanning feature:
+- `SCAN` - Perform a single full scan
+- `SCAN_ON` - Enable automatic periodic scanning
+- `SCAN_OFF` - Disable automatic scanning
+
 ## Troubleshooting
 
 ### Motor Issues
@@ -180,3 +234,13 @@ To add a new emotion:
 2. Create a new drawing function (e.g., `drawAngryFace()`)
 3. Add the new emotion to the display switch statement
 4. Update `setEmotion()` function to handle the new emotion
+
+### Using the Servo for Other Functions
+
+The servo motor can be used for additional features:
+- Nodding or shaking head for more expressive interactions
+- Looking around when curious
+- Tracking movement when following objects
+- Pointing in the direction it plans to travel
+
+To implement these behaviors, modify the `executeIdleState()` and other state functions to include servo movements that match the current emotion.
